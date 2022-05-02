@@ -10,11 +10,14 @@ agent:
   replan_freq: 1
   verbose: ${debug_mode}
 
-normalize: true
-normalize_double_precision: true
-target_is_delta: true
+model_trainer: ModelTrainer
+reinitialize_models: true 
+normalize: false
+normalize_double_precision: false
+target_is_delta: false
 initial_exploration_steps: ${overrides.trial_length}
 freq_train_model: ${overrides.freq_train_model}
 learned_rewards: ${overrides.learned_rewards}
 
 num_particles: 20
+dataset_size: 10000

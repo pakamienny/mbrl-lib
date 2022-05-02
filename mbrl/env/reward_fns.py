@@ -8,7 +8,7 @@ from . import termination_fns
 
 
 def cartpole(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
-    assert len(next_obs.shape) == len(act.shape) == 2
+    assert len(next_obs.shape) == len(act.shape) == 2, "shapes: {}, {}".format(next_obs.shape, act.shape)
 
     return (~termination_fns.cartpole(act, next_obs)).float().view(-1, 1)
 

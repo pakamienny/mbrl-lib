@@ -14,6 +14,7 @@ from torch import optim as optim
 
 from mbrl.util.logger import Logger
 from mbrl.util.replay_buffer import BootstrapIterator, TransitionIterator
+from torch.utils.tensorboard import SummaryWriter
 
 from .model import Model
 
@@ -26,6 +27,91 @@ MODEL_LOG_FORMAT = [
     ("model_val_score", "MVSCORE", "float"),
     ("model_best_val_score", "MBVSCORE", "float"),
 ]
+SYMBOLIC_MODEL_LOG_FORMAT = [
+    ("train_iteration", "I", "int"),
+    ("train_dataset_size", "TD", "int"),
+    ("val_dataset_size", "VD", "int"),
+    ("model_loss", "MLOSS", "float"),
+    ("model_val_score", "MVSCORE", "float"),
+]
+
+
+class SymbolicModelTrainer:
+
+
+    _LOG_GROUP_NAME = "model_train"
+
+    def __init__(
+        self,
+        model: Model,
+        logger: Optional[Logger] = None,
+        tensorboard_logger: Optional[SummaryWriter] = None,
+        **args
+
+    ):
+        self.model = model
+        self._train_iteration = 0
+        self.logger = logger
+        self.tensorboard_logger = tensorboard_logger
+
+        if self.logger:
+            self.logger.register_group(
+                self._LOG_GROUP_NAME,
+                SYMBOLIC_MODEL_LOG_FORMAT,
+                color="blue",
+                dump_frequency=1,
+            )
+
+    def train(
+        self,
+        dataset_train,
+        dataset_val,
+        callback=None,
+        evaluate: bool = False,
+        silent: bool = False,
+        **args
+    ) -> Tuple[List[float], List[float]]:
+       
+        eval_dataset = dataset_train if dataset_val is None else dataset_val
+
+        try:
+            dataset_train_batch = next(dataset_train)
+            eval_dataset_batch = next(eval_dataset)
+        except StopIteration as e:
+            print(e)
+            return
+
+        train_score, _ = self.model.update(dataset_train_batch)
+        eval_score = self.evaluate(eval_dataset_batch)
+        self._train_iteration += 1
+
+        if self.logger and not silent:
+            self.logger.log_data(
+                self._LOG_GROUP_NAME,
+                {
+                    "iteration": self._train_iteration,
+                    "train_dataset_size": dataset_train.num_stored,
+                    "val_dataset_size": dataset_val.num_stored
+                    if dataset_val is not None
+                    else 0,
+                    "model_loss": train_score,
+                    "model_val_score": eval_score,
+                },
+        )
+        if self.tensorboard_logger and evaluate:
+                self.tensorboard_logger.add_scalars("score", {
+                                                            "train": train_score,
+                                                            "eval": eval_score
+                                                            }, 0)
+
+        if callback is not None: callback(train_score, eval_score)
+        return [train_score], [eval_score]
+
+    def evaluate(self, dataset):
+        eval_score, _ = self.model.eval_score(dataset)
+        return eval_score.item()
+
+
 
 
 class ModelTrainer:
@@ -47,6 +133,8 @@ class ModelTrainer:
         weight_decay: float = 1e-5,
         optim_eps: float = 1e-8,
         logger: Optional[Logger] = None,
+        tensorboard_logger: Optional[SummaryWriter] = None,
+
     ):
         self.model = model
         self._train_iteration = 0
@@ -59,7 +147,7 @@ class ModelTrainer:
                 color="blue",
                 dump_frequency=1,
             )
-
+        self.tensorboard_logger = tensorboard_logger
         self.optimizer = optim.Adam(
             self.model.parameters(),
             lr=optim_lr,
@@ -138,7 +226,16 @@ class ModelTrainer:
         best_weights: Optional[Dict] = None
         epoch_iter = range(num_epochs) if num_epochs else itertools.count()
         epochs_since_update = 0
+
         best_val_score = self.evaluate(eval_dataset) if evaluate else None
+
+        if self.tensorboard_logger and evaluate:
+            self.tensorboard_logger.add_scalars("score", {
+                                                            "train": self.evaluate(dataset_train).mean().item(),
+                                                            "eval": best_val_score.mean().item()
+                                                            }, 0)
+
+                             
         # only enable tqdm if training for a single epoch,
         # otherwise it produces too much output
         disable_tqdm = silent or (num_epochs is None or num_epochs > 1)
@@ -156,15 +253,17 @@ class ModelTrainer:
                     batch_callback_epoch(loss, meta, "train")
             total_avg_loss = np.mean(batch_losses).mean().item()
             training_losses.append(total_avg_loss)
+            if self.tensorboard_logger:
+                self.tensorboard_logger.add_scalar("loss/train", total_avg_loss, self._train_iteration*num_epochs + epoch)
 
             eval_score = None
             model_val_score = 0
+
             if evaluate:
                 eval_score = self.evaluate(
                     eval_dataset, batch_callback=batch_callback_epoch
                 )
                 val_scores.append(eval_score.mean().item())
-
                 maybe_best_weights = self.maybe_get_best_weights(
                     best_val_score, eval_score, improvement_threshold
                 )
@@ -175,6 +274,12 @@ class ModelTrainer:
                 else:
                     epochs_since_update += 1
                 model_val_score = eval_score.mean()
+
+                if self.tensorboard_logger:
+                    self.tensorboard_logger.add_scalars("score", {
+                                                                "train": self.evaluate(dataset_train).mean().item(),
+                                                                "eval": eval_score.mean().item()
+                                                                }, self._train_iteration*num_epochs + epoch+1)
 
             if self.logger and not silent:
                 self.logger.log_data(
@@ -193,6 +298,9 @@ class ModelTrainer:
                         else 0,
                     },
                 )
+
+                                                 
+
             if callback:
                 callback(
                     self.model,
@@ -258,7 +366,6 @@ class ModelTrainer:
 
         mean_axis = 1 if batch_scores.ndim == 2 else (1, 2)
         batch_scores = batch_scores.mean(dim=mean_axis)
-
         return batch_scores
 
     def maybe_get_best_weights(

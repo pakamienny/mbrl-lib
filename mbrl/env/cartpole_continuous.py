@@ -12,7 +12,7 @@ class CartPoleEnv(gym.Env):
     # a multiplicative factor to the total force.
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 50}
 
-    def __init__(self):
+    def __init__(self, partial_observability=False):
         self.gravity = 9.8
         self.masscart = 1.0
         self.masspole = 0.1
@@ -21,8 +21,8 @@ class CartPoleEnv(gym.Env):
         self.polemass_length = self.masspole * self.length
         self.force_mag = 10.0
         self.tau = 0.02  # seconds between state updates
-        self.kinematics_integrator = "euler"
-
+        self.kinematics_integrator =    "euler"
+        self.partial_observability = partial_observability
         # Angle at which to fail the episode
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
         self.x_threshold = 2.4
@@ -46,8 +46,24 @@ class CartPoleEnv(gym.Env):
         self.seed()
         self.viewer = None
         self.state = None
-
+        self._elapsed_steps = None
         self.steps_beyond_done = None
+
+    def set_state_and_timestep(self, state, timestep):
+        self.state = state
+        self.timestep = timestep
+
+    def get_obs_names(self):
+        if self.partial_observability:
+            return ["x", "theta"]
+        else:
+            return ["x", "x_dot", "theta", "theta_dot"]
+
+    def get_obs(self):
+        if self.partial_observability:
+            return np.array(self.state[[0,2]])
+        else:
+            return np.array(self.state)
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -106,13 +122,18 @@ class CartPoleEnv(gym.Env):
                 )
             self.steps_beyond_done += 1
             reward = 0.0
+        self._elapsed_steps += 1
 
-        return np.array(self.state), reward, done, {}
+        return self.get_obs(), reward, done, {}
 
     def reset(self):
         self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
         self.steps_beyond_done = None
-        return np.array(self.state)
+        self._elapsed_steps = 0 
+        return self.get_obs()
+
+    def set_state(self, state):
+        self.state = state
 
     def render(self, mode="human"):
         screen_width = 600

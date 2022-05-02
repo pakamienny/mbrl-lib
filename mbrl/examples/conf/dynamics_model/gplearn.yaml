@@ -1,0 +1,15 @@
+# @package _group_
+name : gplearn
+
+_target_: mbrl.models.MultiDimensionalRegressorWrapper
+regressor_class: "gplearn.genetic.SymbolicRegressor"
+regressor_args: 
+  random_state: ${overrides.seed}
+  population_size: 5000
+  function_set: ('add','sub','mul','div','cos','sin','pow')   
+device: ${device}
+ensemble_size: 1
+deterministic: true
+in_size: ???
+out_size: ???
+num_particles: 20

@@ -16,7 +16,10 @@ import mbrl.env.termination_fns
 import mbrl.models
 import mbrl.planning
 import mbrl.util.common
-from mbrl.third_party.dmc2gym.wrappers import DMCWrapper
+try:
+    from mbrl.third_party.dmc2gym.wrappers import DMCWrapper
+except Exception as e:
+    print(e)
 
 
 class PlanetVisualizer:

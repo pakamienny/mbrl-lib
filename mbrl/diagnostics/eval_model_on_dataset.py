@@ -34,11 +34,15 @@ class DatasetEvaluator:
         )
 
         self.replay_buffer = mbrl.util.common.create_replay_buffer(
-            self.cfg,
+            mbrl.util.common.load_hydra_cfg(dataset_dir),
             self.env.observation_space.shape,
             self.env.action_space.shape,
             load_dir=dataset_dir,
         )
+    def compute_accuracy(self, pred, target):
+        assert pred.ndim==target.ndim==2
+        standard_errors = ((pred-target)**2).sum(-1)
+        return (standard_errors.mean(), standard_errors.std()/np.sqrt(standard_errors.shape[0]))
 
     def plot_dataset_results(self, dataset: mbrl.util.TransitionIterator):
         all_means: List[np.ndarray] = []
@@ -62,6 +66,7 @@ class DatasetEvaluator:
             all_means_np = all_means_np[np.newaxis, :]
         assert all_means_np.ndim == 3  # ensemble, batch, target_dim
 
+        accuracies = self.compute_accuracy(all_means_np.mean(0), targets_np)
         # Visualization
         num_dim = targets_np.shape[1]
         for dim in range(num_dim):
@@ -75,7 +80,7 @@ class DatasetEvaluator:
             for i in range(all_means_np.shape[0]):
                 plt.plot(target, means[i], ".", markersize=2)
             mean_of_means = means.mean(0)
-            mean_sort_idx = target.argsort()
+            mean_sort_idx = target.argsort() 
             plt.plot(
                 target[mean_sort_idx],
                 mean_of_means[mean_sort_idx],
@@ -93,6 +98,7 @@ class DatasetEvaluator:
             fname = self.output_path / f"pred_dim{dim}.png"
             plt.savefig(fname)
             plt.close()
+        return accuracies
 
     def run(self):
         batch_size = 32
@@ -105,7 +111,7 @@ class DatasetEvaluator:
             self.replay_buffer, batch_size=batch_size, val_ratio=0
         )
 
-        self.plot_dataset_results(dataset)
+        return self.plot_dataset_results(dataset)
 
 
 if __name__ == "__main__":
@@ -117,6 +123,8 @@ if __name__ == "__main__":
 
     if not args.dataset_dir:
         args.dataset_dir = args.model_dir
+    if not args.results_dir:
+        args.results_dir = pathlib.Path(args.model_dir) / "diagnostics"
     evaluator = DatasetEvaluator(args.model_dir, args.dataset_dir, args.results_dir)
 
     mpl.rcParams["figure.facecolor"] = "white"

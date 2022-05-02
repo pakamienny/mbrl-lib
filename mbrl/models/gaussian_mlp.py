@@ -78,6 +78,7 @@ class GaussianMLP(Ensemble):
         propagation_method: Optional[str] = None,
         learn_logvar_bounds: bool = False,
         activation_fn_cfg: Optional[Union[Dict, omegaconf.DictConfig]] = None,
+        **args
     ):
         super().__init__(
             ensemble_size, device, propagation_method, deterministic=deterministic
@@ -120,10 +121,9 @@ class GaussianMLP(Ensemble):
             self.max_logvar = nn.Parameter(
                 0.5 * torch.ones(1, out_size), requires_grad=learn_logvar_bounds
             )
-
+   
         self.apply(truncated_normal_init)
         self.to(self.device)
-
         self.elite_models: List[int] = None
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
@@ -275,9 +275,11 @@ class GaussianMLP(Ensemble):
 
         """
         if use_propagation:
-            return self._forward_ensemble(
+            import time
+            y = self._forward_ensemble(
                 x, rng=rng, propagation_indices=propagation_indices
-            )
+            )            
+            return y
         return self._default_forward(x)
 
     def _mse_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

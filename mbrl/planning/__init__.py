@@ -10,4 +10,5 @@ from .trajectory_opt import (
     TrajectoryOptimizer,
     TrajectoryOptimizerAgent,
     create_trajectory_optim_agent_for_model,
+    create_trajectory_random_agent
 )

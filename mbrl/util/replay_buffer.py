@@ -61,7 +61,10 @@ class TransitionIterator:
         self.transitions = transitions
         self.num_stored = len(transitions)
         self._order: np.ndarray = np.arange(self.num_stored)
-        self.batch_size = batch_size
+        if batch_size == -1:
+            self.batch_size = self.num_stored
+        else:
+            self.batch_size = batch_size
         self._current_batch = 0
         self._shuffle_each_epoch = shuffle_each_epoch
         self._rng = rng if rng is not None else np.random.default_rng()

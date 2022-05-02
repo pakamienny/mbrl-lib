@@ -1,0 +1,22 @@
+# @package _group_
+name : operon
+
+_target_: mbrl.models.MultiDimensionalRegressorWrapper
+regressor_class: "operon.sklearn.SymbolicRegressor"
+regressor_args: 
+  local_iterations: 5
+  generations: 10000
+  n_threads: 10
+  random_state: ${overrides.seed}
+  time_limit: 240
+  max_evaluations: 500000
+  population_size: 5000
+  allowed_symbols: 'add,sub,mul,div,constant,variable,cos,sin,pow'       
+  objectives: ["mse"]
+  reinserter: 'keep-best'
+device: ${device}
+ensemble_size: 1
+deterministic: true
+in_size: ???
+out_size: ???
+num_particles: 20

@@ -455,7 +455,7 @@ class Ensemble(Model, abc.ABC):
                 be returned with value ``None``.
         """
         if deterministic or self.deterministic:
-            return (
+            res = (
                 self.forward(
                     model_input,
                     rng=rng,
@@ -463,6 +463,7 @@ class Ensemble(Model, abc.ABC):
                 )[0],
                 model_state,
             )
+            return res
         assert rng is not None
         means, logvars = self.forward(
             model_input, rng=rng, propagation_indices=model_state["propagation_indices"]

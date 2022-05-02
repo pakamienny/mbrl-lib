@@ -13,6 +13,7 @@ import omegaconf
 import mbrl.models
 import mbrl.planning
 import mbrl.types
+import torch
 
 from .replay_buffer import (
     BootstrapIterator,
@@ -86,7 +87,6 @@ def create_one_dim_tr_model(
 
     # Now instantiate the model
     model = hydra.utils.instantiate(cfg.dynamics_model)
-
     name_obs_process_fn = cfg.overrides.get("obs_process_fn", None)
     if name_obs_process_fn:
         obs_process_fn = hydra.utils.get_method(cfg.overrides.obs_process_fn)
@@ -205,6 +205,22 @@ def create_replay_buffer(
 
     return replay_buffer
 
+def get_train_test_datasets(
+    replay_buffer: ReplayBuffer,
+    val_ratio: float,
+    shuffle: bool = True):
+    
+    data = replay_buffer.get_all(shuffle=shuffle)
+    val_size = int(replay_buffer.num_stored * val_ratio)
+    train_size = replay_buffer.num_stored - val_size
+    train_data = data[:train_size]
+
+    if val_size > 0:
+        val_data = data[train_size:]
+    else: 
+        val_data = None
+    return train_data, val_data
+
 
 def get_basic_buffer_iterators(
     replay_buffer: ReplayBuffer,
@@ -238,15 +254,23 @@ def get_basic_buffer_iterators(
     val_size = int(replay_buffer.num_stored * val_ratio)
     train_size = replay_buffer.num_stored - val_size
     train_data = data[:train_size]
-    train_iter = BootstrapIterator(
+
+    if ensemble_size == 1: 
+        train_iter = TransitionIterator(
         train_data,
         batch_size,
-        ensemble_size,
         shuffle_each_epoch=shuffle_each_epoch,
-        permute_indices=bootstrap_permutes,
         rng=replay_buffer.rng,
     )
-
+    else:
+        train_iter = BootstrapIterator(
+            train_data,
+            batch_size,
+            ensemble_size,
+            shuffle_each_epoch=shuffle_each_epoch,
+            permute_indices=bootstrap_permutes,
+            rng=replay_buffer.rng,
+        )
     val_iter = None
     if val_size > 0:
         val_data = data[train_size:]
@@ -441,7 +465,8 @@ def rollout_model_env(
     obs_history = []
     reward_history = []
     if agent:
-        plan = agent.plan(initial_obs[None, :])
+        plan = agent.plan(initial_obs)
+        #plan = agent.plan(initial_obs[None, :])
     initial_obs = np.tile(initial_obs, (num_samples, 1))
     model_state = model_env.reset(initial_obs, return_as_np=True)
     obs_history.append(initial_obs)
@@ -508,6 +533,7 @@ def rollout_agent_trajectories(
             "collect_trajectories is set to False, which will result in "
             "corrupted trajectory data."
         )
+    if steps_or_trials_to_collect == 0: return 
 
     step = 0
     trial = 0

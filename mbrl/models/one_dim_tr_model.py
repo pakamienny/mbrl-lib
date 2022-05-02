@@ -90,6 +90,7 @@ class OneDTransitionRewardModel(Model):
                 self.model.device,
                 dtype=torch.double if normalize_double_precision else torch.float,
             )
+
         self.device = self.model.device
         self.learned_rewards = learned_rewards
         self.target_is_delta = target_is_delta
@@ -185,7 +186,7 @@ class OneDTransitionRewardModel(Model):
     def update(
         self,
         batch: mbrl.types.TransitionBatch,
-        optimizer: torch.optim.Optimizer,
+        optimizer: Optional[torch.optim.Optimizer] = None,
         target: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Updates the model given a batch of transitions and an optimizer.

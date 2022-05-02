@@ -1,0 +1,16 @@
+# @package _group_
+name : operon
+
+_target_: mbrl.models.MultiDimensionalRegressorWrapper
+regressor_class: "symbolicregression.model.SymbolicTransformerRegressor"
+regressor_args: 
+  model: ??
+  max_input_points: 200
+  n_trees_to_refine: 100
+  rescale: True
+device: ${device}
+ensemble_size: 1
+deterministic: true
+in_size: ???
+out_size: ???
+num_particles: 20

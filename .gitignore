@@ -1,5 +1,6 @@
 *personal*
 exp/
+*.pt
 .python-version
 .vscode
 .idea
