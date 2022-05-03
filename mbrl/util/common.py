@@ -29,6 +29,7 @@ def create_one_dim_tr_model(
     obs_shape: Tuple[int, ...],
     act_shape: Tuple[int, ...],
     model_dir: Optional[Union[str, pathlib.Path]] = None,
+    model = None,
 ):
     """Creates a 1-D transition reward model from a given configuration.
 
@@ -86,7 +87,8 @@ def create_one_dim_tr_model(
         model_cfg.out_size = obs_shape[0] + int(cfg.algorithm.learned_rewards)
 
     # Now instantiate the model
-    model = hydra.utils.instantiate(cfg.dynamics_model)
+    if model is None:
+        model = hydra.utils.instantiate(cfg.dynamics_model)
     name_obs_process_fn = cfg.overrides.get("obs_process_fn", None)
     if name_obs_process_fn:
         obs_process_fn = hydra.utils.get_method(cfg.overrides.obs_process_fn)

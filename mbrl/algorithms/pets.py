@@ -41,10 +41,10 @@ def evaluate(
     assert len(rewards)==number_episodes, "problem with number of rewards"
     return (np.mean(rewards), np.std(rewards)/np.sqrt(number_episodes))
 
-def create_model_and_trainer(cfg, obs_shape, act_shape, logger, tensorboard_logger):
-    dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape)
+def create_trainer(cfg, dynamics_model, logger, tensorboard_logger):
 
     model_trainer_type = cfg.algorithm.model_trainer
+    print(model_trainer_type)
     if model_trainer_type == "SymbolicModelTrainer":
         model_trainer = mbrl.models.SymbolicModelTrainer(
                 dynamics_model,
@@ -59,7 +59,14 @@ def create_model_and_trainer(cfg, obs_shape, act_shape, logger, tensorboard_logg
             logger=logger,
             tensorboard_logger=tensorboard_logger
             )     
-    return dynamics_model, model_trainer
+    return model_trainer
+
+def make_copies(*args):
+    res = []
+    for arg in args:
+        print(arg)
+        res.append(copy.deepcopy(arg))
+    return tuple(res)
 
 def train(
     env: gym.Env,
@@ -95,7 +102,10 @@ def train(
         )
 
     # -------- Create and populate initial env dataset --------
-    dynamics_model, model_trainer = create_model_and_trainer(cfg, obs_shape, act_shape, logger, tensorboard_logger)
+    dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape)
+    dynamics_model_model = copy.deepcopy(dynamics_model.model)
+    model_trainer = create_trainer(cfg, dynamics_model, logger, tensorboard_logger)
+
     use_double_dtype = cfg.algorithm.get("normalize_double_precision", False)
     dtype = np.double if use_double_dtype else np.float32
     replay_buffer = mbrl.util.common.create_replay_buffer(
@@ -160,7 +170,8 @@ def train(
             # --------------- Model Training -----------------
             if env_steps % cfg.algorithm.freq_train_model == 0:
                 if cfg.algorithm.reinitialize_models:
-                    dynamics_model, model_trainer = create_model_and_trainer(cfg, obs_shape, act_shape, logger, tensorboard_logger)
+                    dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape, model=dynamics_model_model)
+                    model_trainer = create_trainer(cfg, dynamics_model, logger, tensorboard_logger) 
                     print("Reinitialized model")
 
                 mbrl.util.common.train_model_and_save_model_and_data(

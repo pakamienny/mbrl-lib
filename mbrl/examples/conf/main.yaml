@@ -3,7 +3,6 @@ defaults:
   - dynamics_model: gaussian_mlp_ensemble
   - overrides: pets_cartpole
   - action_optimizer: cem
-  #- override hydra/launcher: submitit_slurm
 
 seed: 0
 device: "cuda:0"
@@ -22,10 +21,12 @@ hydra:
     dir: ${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
   sweep:
     dir: ${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
-  #launcher: 
-  #  gpus_per_node: 1
-  #  tasks_per_node: 1
-  #  nodes: 1
-  #  timeout_min: 300
-  #  constraint:
-  #  cpus_per_gpu: 4
+ # launcher: 
+ #   timeout_min: 300
+ #   cpus_per_task: 8
+ #   gpus_per_node: 1
+ #   tasks_per_node: 1
+ #   mem_gb: 400
+ #   nodes: 1
+ #   submitit_folder: ${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}/.slurm
+ #   partition: devlab

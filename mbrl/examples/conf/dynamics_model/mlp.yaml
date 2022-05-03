@@ -10,3 +10,9 @@ deterministic: true
 activation_fn_cfg:
   _target_: torch.nn.SiLU
 name : mlp
+
+model_trainer: ModelTrainer
+reinitialize_models: true 
+normalize: false
+normalize_double_precision: true
+target_is_delta: false

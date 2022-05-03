@@ -79,10 +79,11 @@ class MultiDimensionalRegressorWrapper(Ensemble):
         if torch.is_tensor(Y):
             Y = Y.cpu().numpy()
         models = getattr(self, "models", None)
-        my_module, class_name = ".".join(self.regressor_class.split(".")[:-1]), self.regressor_class.split(".")[-1]
-        my_module = importlib.import_module(my_module)
-        regressor_class = getattr(my_module, class_name)
         if models is None:
+            print(sys.modules.keys())
+            my_module, class_name = ".".join(self.regressor_class.split(".")[:-1]), self.regressor_class.split(".")[-1]
+            my_module = importlib.import_module(my_module)
+            regressor_class = getattr(my_module, class_name)
             self.models = defaultdict(list)
             for i in range(self.num_members):
                 self._fit(X, Y, regressor_class=regressor_class, idx=i)

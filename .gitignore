@@ -1,6 +1,7 @@
 *personal*
 exp/
 *.pt
+notebooks/runs/*
 .python-version
 .vscode
 .idea

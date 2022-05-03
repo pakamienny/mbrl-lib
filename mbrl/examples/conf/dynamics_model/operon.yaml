@@ -20,3 +20,9 @@ deterministic: true
 in_size: ???
 out_size: ???
 num_particles: 20
+
+model_trainer: SymbolicModelTrainer
+reinitialize_models: true 
+normalize: false
+normalize_double_precision: true
+target_is_delta: false
