@@ -7,7 +7,7 @@ regressor_args:
   local_iterations: 5
   generations: 10000
   n_threads: 10
-  random_state: ${overrides.seed}
+  random_state: ${seed}
   time_limit: 240
   max_evaluations: 500000
   population_size: 5000

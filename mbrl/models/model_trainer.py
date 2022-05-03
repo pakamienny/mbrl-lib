@@ -76,15 +76,18 @@ class SymbolicModelTrainer:
 
         try:
             dataset_train_batch = next(dataset_train)
-            eval_dataset_batch = next(eval_dataset)
+            train_score, _ = self.model.update(dataset_train_batch)
         except StopIteration as e:
             print(e)
-            return
+            train_score=np.nan
+        try:
+            eval_dataset_batch = next(eval_dataset)
+            eval_score = self.evaluate(eval_dataset_batch)
+        except StopIteration as e:
+            print(e)
+            eval_score=np.nan
 
-        train_score, _ = self.model.update(dataset_train_batch)
-        eval_score = self.evaluate(eval_dataset_batch)
         self._train_iteration += 1
-
         if self.logger and not silent:
             self.logger.log_data(
                 self._LOG_GROUP_NAME,

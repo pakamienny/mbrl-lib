@@ -7,6 +7,6 @@ out_size: ???
 ensemble_size: 1
 hid_size: 200
 deterministic: false
-activation_fn_cfg:
+activation_fn:
   _target_: torch.nn.SiLU
 name : gaussian_mlp

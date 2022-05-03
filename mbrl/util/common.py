@@ -89,6 +89,7 @@ def create_one_dim_tr_model(
     # Now instantiate the model
     if model is None:
         model = hydra.utils.instantiate(cfg.dynamics_model)
+
     name_obs_process_fn = cfg.overrides.get("obs_process_fn", None)
     if name_obs_process_fn:
         obs_process_fn = hydra.utils.get_method(cfg.overrides.obs_process_fn)

@@ -80,7 +80,6 @@ class MultiDimensionalRegressorWrapper(Ensemble):
             Y = Y.cpu().numpy()
         models = getattr(self, "models", None)
         if models is None:
-            print(sys.modules.keys())
             my_module, class_name = ".".join(self.regressor_class.split(".")[:-1]), self.regressor_class.split(".")[-1]
             my_module = importlib.import_module(my_module)
             regressor_class = getattr(my_module, class_name)

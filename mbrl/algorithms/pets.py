@@ -44,7 +44,6 @@ def evaluate(
 def create_trainer(cfg, dynamics_model, logger, tensorboard_logger):
 
     model_trainer_type = cfg.algorithm.model_trainer
-    print(model_trainer_type)
     if model_trainer_type == "SymbolicModelTrainer":
         model_trainer = mbrl.models.SymbolicModelTrainer(
                 dynamics_model,
@@ -90,7 +89,6 @@ def train(
     if work_dir is None:
         work_dir = os.getcwd()
     print(f"Results will be saved at {work_dir}.")
-
     if silent:
         logger = None
     else:

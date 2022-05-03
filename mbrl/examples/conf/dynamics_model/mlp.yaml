@@ -7,7 +7,7 @@ out_size: ???
 ensemble_size: 1
 hid_size: 200
 deterministic: true
-activation_fn_cfg:
+activation_fn:
   _target_: torch.nn.SiLU
 name : mlp
 
