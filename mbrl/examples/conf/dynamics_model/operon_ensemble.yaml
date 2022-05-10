@@ -2,14 +2,15 @@ _target_: mbrl.models.Operon
 device: ${device}
 in_size: ???
 out_size: ???
-ensemble_size: 7
-hid_size: 200
+ensemble_size: 2
 deterministic: true
 propagation_method: random_model
 
-name : gaussian_mlp_ensemble
+name : operon_ensemble
 
-model_trainer: ModelTrainer
+model_trainer: 
+  _target_: mbrl.models.SymbolicModelTrainer
+
 reinitialize_models: true 
 normalize: false
 normalize_double_precision: true

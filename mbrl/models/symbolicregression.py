@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import pathlib
+from posixpath import dirname
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import hydra
@@ -15,22 +16,56 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 import mbrl.util.math
-
+import sympy as sp
 from .model import Ensemble
 from .util import EnsembleLinearLayer, truncated_normal_init
+import numexpr as ne
+from functools import partial
 
-class StackModels(nn.Module):
-    def __init__(self, models, device):
+def expr_to_numexpr_fn(expr):
+    infix = str(expr)
+
+    def get_vals(dim, val):
+        vals_ar = np.empty((dim,))
+        vals_ar[:] = val
+        return vals_ar
+
+    def wrapped_numexpr_fn(_infix, x):
+        if torch.is_tensor(x) and x.device != "cpu":
+            x=x.cpu()
+        local_dict = {}
+        for d in range(x.shape[1]):
+            if "X{}".format(d+1) in _infix:
+                local_dict["X{}".format(d+1)]=x[:,d]
+        vals = ne.evaluate(_infix, local_dict=local_dict)
+        if len(vals.shape)==0:
+            vals = get_vals(x.shape[0], vals)
+        return vals[:, None]
+    return partial(wrapped_numexpr_fn, infix)
+   
+def get_model_sympy_expr(model):
+    return sp.parse_expr(model.get_model_string(3).replace('^','**')) 
+
+def get_model_sympy_expr_from_numexpr(model):
+    return model.args[0]
+
+class StackedModels(nn.Module):
+    def __init__(self, ensemble_size, out_size, device):
         super().__init__()
 
         """For now, elite is defined for all dimensions of output"""
-        self.models=models
-        self.num_members=len(models)
-        self.out_size=len(models[0])
+
+        print("................ Building operon .....................")
+
+        self.models=[[create_operon_model(e) for o in range(out_size)] for e in range(ensemble_size)]
+        self.num_members=ensemble_size
+        self.out_size=out_size
         self.elite_models: List[int] = None
         self.use_only_elite = False
         self.fake_param = nn.Parameter(torch.tensor(0.))
         self.device=device
+        self.compiled_models = [[None for _ in range(self.out_size)] for _ in range(self.num_members)]
+        print("................ Built operon .....................")
 
     def toggle_use_only_elite(self):
         self.use_only_elite = not self.use_only_elite
@@ -38,61 +73,109 @@ class StackModels(nn.Module):
     def set_elite(self, elite_indices: Sequence[int]):
         if len(elite_indices) != self.num_members:
             self.elite_models = list(elite_indices)
-    
-    def forward(self, x):
-        redimension=False
-        if x.ndim == 3:
-            redimension=True
-            E,B,D=x.size()
-            print(" E,B,D",  E,B,D)
-            x = x.view(E*B,D)
-        print("XXXXXX", x.shape)
-        to_forward = [i for i in range(self.num_members)]
-        if self.use_only_elite:
-            to_forward = self.elite_models
-        outputs=[]
-        for i in to_forward:
-            model_i = self.models[i]
-            outputs_i = []
-            for j in range(self.out_size):
+   
+    def compile(self):
+        for model_id, model in enumerate(self.models):
+            for dim in range(self.out_size):
                 try:
-                    outputs_i.append(model_i[j].predict(x))
-                except sklearn.exceptions.NotFittedError: 
-                    outputs_i.append(np.zeros((x.shape[0],1)))
-            outputs_i = np.concatenate(outputs_i, -1)
-            outputs.append(outputs_i[None, :])
-        outputs = np.concatenate(outputs, 0)
-        outputs = torch.tensor(outputs).to(self.device)
-        print("outyputs", outputs.shape)
-        if redimension:
-            outputs = outputs.view(E, B, self.out_size)
-        assert outputs.shape == (self.num_members, x.shape[0], self.out_size), "problem with shape {}".format(outputs.shape)
+                    expr = get_model_sympy_expr(model[dim])
+                except Exception as e:
+                    break
+                if expr != sp.nan:
+                    self.compiled_models[model_id][dim]=expr_to_numexpr_fn(expr)
+                else:
+                    print("failed dim: {}".format(dim))
+        print("Compiled models")
+
+    def __str__(self):
+        for model_id, model in enumerate(self.compiled_models): 
+            for dim in range(self.out_size):
+                print("model id: {}, dim {}, expr: {} ".format(model_id, dim, get_model_sympy_expr_from_numexpr(model[dim])))
+
+    def __repr__(self):
+        repr=""
+        for model_id, model in enumerate(self.compiled_models): 
+            for dim in range(self.out_size):
+                repr+="model id: {}, dim {}, expr: {} \n".format(model_id, dim, get_model_sympy_expr_from_numexpr(model[dim]))
+        return repr
+                
+    def fit(self, X, y, max_trials=10):
+        X_np = X.cpu().numpy()
+        y_np = y.cpu().numpy()
+
+        assert X_np.ndim==3 and y_np.shape[0]==self.num_members, "problem with shape when fitting {}".format(X_np.shape, y_np.shape)
+        for model_id, model in enumerate(self.models): 
+            for dim in range(self.out_size):
+                trial = 0
+                while trial<max_trials:
+                    model[dim].fit(X_np[model_id], y_np[model_id, :, dim])
+                    expr = get_model_sympy_expr(model[dim])
+                    if expr == sp.nan:
+                        trial+=1
+                        model[dim] = create_operon_model(model_id+1000)
+                    else:
+                        break
+        self.compile()
+
+    def forward(self, x):
+        x_np = x.cpu().numpy()
+        if x_np.ndim == 3 and x_np.shape[0]:
+            x_np = x_np[0]
+
+        outputs = []
+        to_forward = self.elite_models if self.use_only_elite else [i for i in range(self.num_members)]
+        compiled_models = [model for model_id, model in enumerate(self.compiled_models) if model_id in to_forward]
+    
+        if x_np.ndim == 3:
+            for model_id, model in enumerate(compiled_models):
+                outputs_i = []
+                for j in range(self.out_size):
+                    if model[j] == None:
+                        y_tilde = np.zeros((x_np.shape[1], 1))
+                    else:
+                        y_tilde = model[j](x_np[model_id])
+                        if y_tilde.ndim==1:
+                            y_tilde = np.expand_dims(y_tilde, -1)
+                    outputs_i.append(y_tilde)
+                outputs_i = np.concatenate(outputs_i, -1)
+                outputs.append(outputs_i[None, :])
+            outputs = np.concatenate(outputs, 0)
+            outputs = torch.tensor(outputs).to(self.device)
+        else:
+            for model_id, model in enumerate(compiled_models):
+                outputs_i = []
+                for j in range(self.out_size):
+                    if model[j] == None:
+                        y_tilde = np.zeros((x_np.shape[0], 1))
+                    else:
+                        y_tilde = model[j](x_np)
+                        if y_tilde.ndim==1:
+                            y_tilde = np.expand_dims(y_tilde, -1)
+                    outputs_i.append(y_tilde)
+                outputs_i = np.concatenate(outputs_i, -1)
+                outputs.append(outputs_i[None, :])
+            outputs = np.concatenate(outputs, 0)
+            outputs = torch.tensor(outputs).to(self.device)
+
         return outputs
         
-def construct_operon(ensemble_size, out_size, device):
-    print("....Building operon.....")
+def create_operon_model(random_state):
     from operon.sklearn import SymbolicRegressor
-
-    models = []
-    for i in range(ensemble_size):
-        models_i = []
-        for j in range(out_size):
-            models_i.append(
-                SymbolicRegressor(
-                    local_iterations= 5,
-                    generations= 10000,
-                    n_threads= 10,
-                    random_state=i,
-                    time_limit= 240,
-                    max_evaluations= 500000,
-                    population_size= 5000,
-                    allowed_symbols= 'add,sub,mul,div,constant,variable,cos,sin,pow',     
-                    objectives= ["mse"],
-                    reinserter='keep-best'
-                )
+    regr = SymbolicRegressor(
+                local_iterations=5,
+                generations= 10000,
+                n_threads= 10,
+                random_state=random_state,
+                time_limit= 240,
+                max_evaluations= 500000,
+                population_size= 5000,
+                allowed_symbols= 'add,sub,mul,div,constant,variable,cos,sin,pow',     
+                objectives= ["r2"],
+                reinserter='keep-best'
             )
-        models.append(models_i)
-    return StackModels(models, device)
+    return regr
+
+
 
 class Operon(Ensemble):
     """Implements an ensemble of multi-layer perceptrons each modeling a Gaussian distribution.
@@ -164,9 +247,15 @@ class Operon(Ensemble):
         self.in_size = in_size
         self.out_size = out_size
         self.device = device
-        self.model = construct_operon(ensemble_size, out_size, device)
+        self.model = StackedModels(ensemble_size, out_size, device)
         self.elite_models: List[int] = None
 
+
+    def get_compiled_models(self):
+        return self.model.compiled_models
+
+    def set_compiled_models(self, compiled_models):
+        self.model.compiled_models=compiled_models
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
@@ -282,7 +371,7 @@ class Operon(Ensemble):
                 For other values of ``self.propagation`` (and ``use_propagation=True``),
                 the shape must be ``B x Id``.
             rng (torch.Generator, optional): random number generator to use for "random_model"
-                propagation.
+                propagation. 
             propagation_indices (tensor, optional): propagation indices to use,
                 as generated by :meth:`sample_propagation_indices`. Ignore if
                 `use_propagation == False` or `self.propagation_method != "fixed_model".
@@ -311,16 +400,18 @@ class Operon(Ensemble):
             )
         return self._default_forward(x)
 
+    def fit(self, model_in: torch.Tensor, target: torch.Tensor):
+        self.model.fit(model_in, target)
+
     def _mse_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         assert model_in.ndim == target.ndim
-        print(model_in.shape, target.shape)
 
         if model_in.ndim == 2:  # add model dimension
             model_in = model_in.unsqueeze(0)
             target = target.unsqueeze(0)
         pred_mean, _ = self.forward(model_in, use_propagation=False)
-        print(model_in.shape, pred_mean.shape, target.shape)
         return F.mse_loss(pred_mean, target, reduction="none").sum((1, 2)).sum()
+
 
     def _nll_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         assert model_in.ndim == target.ndim
@@ -338,10 +429,41 @@ class Operon(Ensemble):
         nll += 0.01 * (self.max_logvar.sum() - self.min_logvar.sum())
         return nll
 
+    def update(
+        self,
+        model_in,
+        optimizer: torch.optim.Optimizer,
+        target: Optional[torch.Tensor] = None,
+    ) -> Tuple[float, Dict[str, Any]]:
+        """Updates the model using backpropagation with given input and target tensors.
+
+        Provides a basic update function, following the steps below:
+
+        .. code-block:: python
+
+           optimizer.zero_grad()
+           loss = self.loss(model_in, target)
+           loss.backward()
+           optimizer.step()
+
+        Args:
+            model_in (tensor or batch of transitions): the inputs to the model.
+            optimizer (torch.optimizer): the optimizer to use for the model.
+            target (tensor or sequence of tensors): the expected output for the given inputs, if it
+                cannot be computed from ``model_in``.
+
+        Returns:
+             (float): the numeric value of the computed loss.
+             (dict): any additional metadata dictionary computed by :meth:`loss`.
+        """
+        loss, meta = self.loss(model_in, target, fit=True)
+        return loss.item(), meta
+
     def loss(
         self,
         model_in: torch.Tensor,
         target: Optional[torch.Tensor] = None,
+        fit: bool = False
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Computes Gaussian NLL loss.
 
@@ -363,6 +485,9 @@ class Operon(Ensemble):
             the model over the given input/target. If the model is an ensemble, returns
             the average over all models.
         """
+        if fit:
+            self.fit(model_in, target)
+
         if self.deterministic:
             return self._mse_loss(model_in, target), {}
         else:
@@ -392,7 +517,6 @@ class Operon(Ensemble):
         with torch.no_grad():
             pred_mean, _ = self.forward(model_in, use_propagation=False)
             target = target.repeat((self.num_members, 1, 1))
-            print(pred_mean.shape, target.shape)
             return F.mse_loss(pred_mean, target, reduction="none"), {}
 
     def sample_propagation_indices(

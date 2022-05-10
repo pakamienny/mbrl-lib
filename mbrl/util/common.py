@@ -85,7 +85,7 @@ def create_one_dim_tr_model(
         model_cfg.out_size = obs_shape[0] + int(cfg.algorithm.learned_rewards)
 
     # Now instantiate the model
-    model = hydra.utils.instantiate(cfg.dynamics_model)
+    model = hydra.utils.instantiate(cfg.dynamics_model, _recursive_=False)
 
     name_obs_process_fn = cfg.overrides.get("obs_process_fn", None)
     if name_obs_process_fn:
@@ -235,8 +235,12 @@ def get_basic_buffer_iterators(
         and validation iterators, respectively.
     """
     data = replay_buffer.get_all(shuffle=True)
-    val_size = int(replay_buffer.num_stored * val_ratio)
-    train_size = replay_buffer.num_stored - val_size
+    if val_ratio < 0:
+        train_size = val_size = replay_buffer.num_stored
+    else:
+        val_size = int(replay_buffer.num_stored * val_ratio)
+        train_size = replay_buffer.num_stored - val_size
+
     train_data = data[:train_size]
     train_iter = BootstrapIterator(
         train_data,
@@ -249,7 +253,7 @@ def get_basic_buffer_iterators(
 
     val_iter = None
     if val_size > 0:
-        val_data = data[train_size:]
+        val_data = data[-val_size:]
         val_iter = TransitionIterator(
             val_data, batch_size, shuffle_each_epoch=False, rng=replay_buffer.rng
         )

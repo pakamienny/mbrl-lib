@@ -9,6 +9,7 @@ import gym
 import numpy as np
 import omegaconf
 import torch
+import hydra
 
 import mbrl.constants
 import mbrl.models
@@ -21,20 +22,9 @@ import mbrl.util.math
 EVAL_LOG_FORMAT = mbrl.constants.EVAL_LOG_FORMAT
 
 def create_trainer(cfg, dynamics_model, logger):
-
-    model_trainer_type = cfg.algorithm.model_trainer
-    if model_trainer_type == "SymbolicModelTrainer":
-        model_trainer = mbrl.models.SymbolicModelTrainer(
-                dynamics_model,
-                logger=logger,
-            )
-    else:
-        model_trainer = mbrl.models.ModelTrainer(
-            dynamics_model,
-            optim_lr=cfg.overrides.model_lr,
-            weight_decay=cfg.overrides.model_wd,
-            logger=logger,
-            )     
+    model_trainer =  hydra.utils.instantiate(cfg.algorithm.model_trainer, 
+                                             model=dynamics_model,
+                                             logger=logger)
     return model_trainer
 
 def train(
@@ -143,8 +133,7 @@ def train(
                 {"env_step": env_steps, "episode_reward": total_reward},
             )
         current_trial += 1
-        if debug_mode:
-            print(f"Trial: {current_trial }, reward: {total_reward}.")
+        print(f"Trial: {current_trial }, reward: {total_reward}.")
 
         max_total_reward = max(max_total_reward, total_reward)
 

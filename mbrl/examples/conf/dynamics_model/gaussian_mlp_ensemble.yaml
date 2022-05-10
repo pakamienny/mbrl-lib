@@ -14,7 +14,11 @@ activation_fn_cfg:
 name : gaussian_mlp_ensemble
 
 
-model_trainer: ModelTrainer
+model_trainer: 
+  _target_: mbrl.models.ModelTrainer
+  optim_lr: ${overrides.model_lr}
+  weight_decay: ${overrides.model_wd}
+
 reinitialize_models: true 
 normalize: false
 normalize_double_precision: true

@@ -199,8 +199,6 @@ class OneDTransitionRewardModel(Model):
         """
         assert target is None
         model_in, target = self._process_batch(batch)
-        print("update", model_in.shape, target.shape)
-
         return self.model.update(model_in, optimizer, target=target)
 
     def eval_score(
