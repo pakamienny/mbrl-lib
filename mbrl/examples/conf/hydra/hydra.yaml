@@ -1,0 +1,26 @@
+run:
+  dir: /checkpoint/pakamienny/model-based/${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
+sweep:
+  dir: /checkpoint/pakamienny/model-based/${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
+job:
+  env_set:
+    OMP_NUM_THREADS: '1'
+    LD_LIBRARY_PATH: /usr/lib/nvidia-384:/lib/x86_64-linux-gnu/libstdc++.so.6:/private/home/pakamienny/.mujoco/mujoco200/bin
+  config:
+    override_dirname:
+      item_sep: /
+      exclude_keys:
+        - seed
+launcher: 
+  mem_gb: 16
+  max_num_timeout: 0
+  cpus_per_task: 4
+  signal_delay_s: 30
+  timeout_min: 300
+  gpus_per_node: 1
+  tasks_per_node: 1
+  partition: devlab
+  comment: NIPS2022
+job_logging:
+  root:
+    handlers: []

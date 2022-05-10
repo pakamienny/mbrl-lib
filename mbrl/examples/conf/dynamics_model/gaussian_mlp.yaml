@@ -1,4 +1,3 @@
-# @package _group_
 _target_: mbrl.models.GaussianMLP
 device: ${device}
 num_layers: 4
@@ -9,3 +8,5 @@ hid_size: 200
 deterministic: false
 activation_fn_cfg:
   _target_: torch.nn.SiLU
+
+name : gaussian_mlp

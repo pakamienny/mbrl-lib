@@ -77,7 +77,9 @@ class GaussianMLP(Ensemble):
         deterministic: bool = False,
         propagation_method: Optional[str] = None,
         learn_logvar_bounds: bool = False,
-        activation_fn_cfg: Optional[Union[Dict, omegaconf.DictConfig]] = None,
+        activation_fn = nn.ReLU(),
+        **args
+
     ):
         super().__init__(
             ensemble_size, device, propagation_method, deterministic=deterministic
@@ -87,13 +89,8 @@ class GaussianMLP(Ensemble):
         self.out_size = out_size
 
         def create_activation():
-            if activation_fn_cfg is None:
-                activation_func = nn.ReLU()
-            else:
-                # Handle the case where activation_fn_cfg is a dict
-                cfg = omegaconf.OmegaConf.create(activation_fn_cfg)
-                activation_func = hydra.utils.instantiate(cfg)
-            return activation_func
+            return activation_fn
+
 
         def create_linear_layer(l_in, l_out):
             return EnsembleLinearLayer(ensemble_size, l_in, l_out)
