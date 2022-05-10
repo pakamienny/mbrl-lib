@@ -1,4 +1,3 @@
-# @package _group_
 name: "pets"
 
 agent:
@@ -10,11 +9,16 @@ agent:
   replan_freq: 1
   verbose: ${debug_mode}
 
-normalize: true
-normalize_double_precision: true
-target_is_delta: true
+model_trainer: ${dynamics_model.model_trainer}
+reinitialize_models: ${dynamics_model.reinitialize_models} 
+normalize: ${dynamics_model.normalize}
+normalize_double_precision: ${dynamics_model.normalize_double_precision}
+target_is_delta: ${dynamics_model.target_is_delta}
+
 initial_exploration_steps: ${overrides.trial_length}
 freq_train_model: ${overrides.freq_train_model}
 learned_rewards: ${overrides.learned_rewards}
 
+
 num_particles: 20
+

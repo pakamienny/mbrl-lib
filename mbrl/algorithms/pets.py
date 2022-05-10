@@ -20,6 +20,22 @@ import mbrl.util.math
 
 EVAL_LOG_FORMAT = mbrl.constants.EVAL_LOG_FORMAT
 
+def create_trainer(cfg, dynamics_model, logger):
+
+    model_trainer_type = cfg.algorithm.model_trainer
+    if model_trainer_type == "SymbolicModelTrainer":
+        model_trainer = mbrl.models.SymbolicModelTrainer(
+                dynamics_model,
+                logger=logger,
+            )
+    else:
+        model_trainer = mbrl.models.ModelTrainer(
+            dynamics_model,
+            optim_lr=cfg.overrides.model_lr,
+            weight_decay=cfg.overrides.model_wd,
+            logger=logger,
+            )     
+    return model_trainer
 
 def train(
     env: gym.Env,
@@ -53,6 +69,9 @@ def train(
 
     # -------- Create and populate initial env dataset --------
     dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape)
+    model_trainer = create_trainer(cfg, dynamics_model, logger)
+
+
     use_double_dtype = cfg.algorithm.get("normalize_double_precision", False)
     dtype = np.double if use_double_dtype else np.float32
     replay_buffer = mbrl.util.common.create_replay_buffer(
@@ -77,12 +96,6 @@ def train(
     # ---------- Create model environment and agent -----------
     model_env = mbrl.models.ModelEnv(
         env, dynamics_model, termination_fn, reward_fn, generator=torch_generator
-    )
-    model_trainer = mbrl.models.ModelTrainer(
-        dynamics_model,
-        optim_lr=cfg.overrides.model_lr,
-        weight_decay=cfg.overrides.model_wd,
-        logger=logger,
     )
 
     agent = mbrl.planning.create_trajectory_optim_agent_for_model(
