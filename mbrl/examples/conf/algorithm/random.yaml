@@ -1,4 +1,4 @@
-# @package _group_
+#### @package _group_
 name: "random"
 environment_steps: 10000
 dataset_size: 10000

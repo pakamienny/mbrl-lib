@@ -45,6 +45,7 @@ class ModelEnv:
         self.dynamics_model = model
         self.termination_fn = termination_fn
         self.reward_fn = reward_fn
+
         self.device = model.device
 
         self.observation_space = env.observation_space

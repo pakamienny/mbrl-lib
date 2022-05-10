@@ -1,4 +1,4 @@
-# @package _group_
+### @package _group_
 name: "pets"
 
 agent:
@@ -7,9 +7,8 @@ agent:
   action_ub: ???
   planning_horizon: ${overrides.planning_horizon}
   optimizer_cfg: ${action_optimizer}
-  replan_freq: 1
+  replan_freq: 1 
   verbose: ${debug_mode}
-
 
 
 model_trainer: ${dynamics_model.model_trainer}
@@ -25,3 +24,4 @@ learned_rewards: ${overrides.learned_rewards}
 
 num_particles: 20
 dataset_size: 10000
+

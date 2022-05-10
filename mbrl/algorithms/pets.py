@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 import os
 from typing import Optional
+import hydra
 
 import gym
 import numpy as np
@@ -31,6 +32,7 @@ def evaluate(
     agent: mbrl.planning.Agent,
     number_episodes: int = 10,
 ):
+    agent.reset()
     rewards = mbrl.util.common.rollout_agent_trajectories(
         env,
         agent=agent,
@@ -79,6 +81,9 @@ def train(
     debug_mode = cfg.get("debug_mode", False)
     evaluation_env = copy.deepcopy(env)
     obs_shape = env.observation_space.shape
+    #if cfg.overrides.get("obs_process_fn", None) is not None:
+    #    obs_process_fn = hydra.utils.get_method(cfg.overrides.obs_process_fn)
+    #    obs_shape = obs_process_fn(env.reset()).shape 
     act_shape = env.action_space.shape
 
     rng = np.random.default_rng(seed=cfg.seed)
@@ -169,8 +174,9 @@ def train(
             if env_steps % cfg.algorithm.freq_train_model == 0:
                 if cfg.algorithm.reinitialize_models:
                     dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape, model=dynamics_model_model)
+                    prev_train_iteration = model_trainer._train_iteration
                     model_trainer = create_trainer(cfg, dynamics_model, logger, tensorboard_logger) 
-                    print("Reinitialized model")
+                    model_trainer._train_iteration = prev_train_iteration
 
                 mbrl.util.common.train_model_and_save_model_and_data(
                     dynamics_model,
@@ -190,13 +196,12 @@ def train(
                     to_log.update({"in_domain_accuracy": in_domain_accuracies[0], "in_domain_accuracy_ste": in_domain_accuracies[1]})
 
                     ##random_data   
-                    random_path="/private/home/pakamienny/Research_2/mbrl-lib/exp/random/default/cartpole_continuous/2022.05.02/013335"
-                    evaluator = DatasetEvaluator(model_path, random_path, results_path / "random" / "epoch_{}".format(model_trainer._train_iteration))
+                    evaluator = DatasetEvaluator(model_path, cfg.overrides.evaluate_dataset_path, results_path / "random" / "epoch_{}".format(model_trainer._train_iteration))
                     random_domain_accuracies = evaluator.run() 
                     to_log.update({"random_accuracy": random_domain_accuracies[0], "in_domain_accuracy_ste": random_domain_accuracies[1]})
                 
                 if cfg.evaluate.evaluate_all_model_updates:
-                    evaluation_reward = evaluate(evaluation_env, agent, number_episodes=cfg.evaluate.evaluate_number_episodes)
+                    evaluation_reward = evaluate(evaluation_env, copy.deepcopy(agent), number_episodes=cfg.evaluate.evaluate_number_episodes)
                     to_log.update({"episode_reward": evaluation_reward[0], "episode_reward_ste": evaluation_reward[1]})
 
                 logger.log_data(mbrl.constants.RESULTS_LOG_NAME, to_log)

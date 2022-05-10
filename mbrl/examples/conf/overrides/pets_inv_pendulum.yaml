@@ -1,7 +1,7 @@
 # @package _group_
 env: "gym___InvertedPendulum-v2"
 term_fn: "inverted_pendulum"
-learned_rewards: true
+learned_rewards: false
 trial_length: 1000
 num_steps: 20000
 
@@ -20,3 +20,6 @@ cem_elite_ratio: 0.078
 cem_population_size: 480
 cem_alpha: 0.134484
 cem_clipped_normal: false
+
+
+evaluate_dataset_path: "/checkpoint/pakamienny/model-based/datasets/pets/operon/gym___InvertedPendulum-v2/2022.05.06/070525"

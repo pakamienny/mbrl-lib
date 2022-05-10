@@ -11,6 +11,8 @@ import hydra
 import numpy as np
 import omegaconf
 
+import os
+print(os.environ["LD_LIBRARY_PATH"])
 import mbrl.models
 import mbrl.types
 

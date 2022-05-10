@@ -7,7 +7,15 @@ from .gaussian_mlp import GaussianMLP
 from .symbolicregressor import MultiDimensionalRegressorWrapper
 from .model import Ensemble, Model
 from .model_env import ModelEnv
+try:
+    from .symbolicregressor import MultiDimensionalRegressorWrapper
+except Exception as e:
+    print(e)
+    import os
+    print(os.environ["LD_LIBRARY_PATH"])
+    assert False
 from .model_trainer import ModelTrainer, SymbolicModelTrainer
+
 from .one_dim_tr_model import OneDTransitionRewardModel
 from .planet import PlaNetModel
 from .util import (
@@ -16,5 +24,3 @@ from .util import (
     EnsembleLinearLayer,
     truncated_normal_init,
 )
-
-print("hello")

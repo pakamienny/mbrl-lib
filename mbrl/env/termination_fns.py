@@ -43,7 +43,6 @@ def cartpole(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
     done = done[:, None]
     return done
 
-
 def inverted_pendulum(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
     assert len(next_obs.shape) == 2
 

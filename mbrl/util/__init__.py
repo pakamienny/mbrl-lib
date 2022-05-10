@@ -96,7 +96,8 @@ def create_handler_from_str(env_name: str):
                       "pets_cartpole",
                       "pets_halfcheetah",
                       "pets_reacher",
-                      "pets_pusher"]:
+                      "pets_pusher",
+                      "pendulum_gym"]:
         from mbrl.util.mujoco import CustomEnvHandler
         return CustomEnvHandler()
     else:

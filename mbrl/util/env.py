@@ -26,7 +26,6 @@ def _get_term_and_reward_fn(
         reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.reward_fn)
     else:
         reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.term_fn, None)
-
     return term_fn, reward_fn
 
 
@@ -61,7 +60,11 @@ def _legacy_make_env(
     else:
         import mbrl.env.mujoco_envs
 
-        if cfg.overrides.env == "cartpole_continuous":
+        if cfg.overrides.env == "pendulum_gym":
+            env = mbrl.env.pendulum.PendulumEnv()
+            term_fn = mbrl.env.termination_fns.no_termination
+            reward_fn = mbrl.env.reward_fns.pendulum_gym
+        elif cfg.overrides.env == "cartpole_continuous":
             env = mbrl.env.cartpole_continuous.CartPoleEnv()
             term_fn = mbrl.env.termination_fns.cartpole
             reward_fn = mbrl.env.reward_fns.cartpole
@@ -179,7 +182,6 @@ class EnvHandler(ABC):
         env_cfg = cfg.overrides.get("env_cfg", None)
         if env_cfg is None:
             return _legacy_make_env(cfg)
-
         env = hydra.utils.instantiate(cfg.overrides.env_cfg)
         env = gym.wrappers.TimeLimit(
             env, max_episode_steps=cfg.overrides.get("trial_length", 1000)

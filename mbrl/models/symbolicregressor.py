@@ -7,7 +7,7 @@ from collections import defaultdict
 import pathlib
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import copy
-
+import operon
 import hydra
 import omegaconf
 import torch
@@ -51,24 +51,37 @@ class MultiDimensionalRegressorWrapper(Ensemble):
             predicted = self.predict(x)
             return predicted[0], None
 
-    def _fit(self, X, Y, regressor_class, idx=0):
+    def _fit(self, X, Y, regressor_class, idx=0, trials=10):
         models=[]
         for dim in range(Y.shape[1]):
-            self.regressor_args["random_state"]=idx
-            regressor = regressor_class(**self.regressor_args)
-            regressor.fit(X, Y[:,dim])
-            if self.regressor_class == "operon.sklearn.SymbolicRegressor":
-                model_function_str = regressor.get_model_string(3)
-                model_function_str  = model_function_str.replace('^','**')
-            else:
-                replace_ops = {"add": "+", "mul": "*", "sub": "-", "pow": "**", "inv": "1/",
-                                "abs": "Abs", "arctan": "atan"}
-                model_function_str = regressor.retrieve_tree().infix()
-                for op,replace_op in replace_ops.items():
-                    model_function_str = model_function_str.replace(op,replace_op)
-                model_function_str = model_function_str.replace("x_", "X")
-                for i in range(X.shape[1]):
-                    model_function_str = model_function_str.replace("X{}".format(i), "X{}".format(i+1))
+            if "random_state" in  self.regressor_args:
+                self.regressor_args["random_state"]=idx
+            for _ in range(trials):
+                regressor = regressor_class(**self.regressor_args)
+                regressor.fit(X, Y[:,dim])
+                if self.regressor_class == "operon.sklearn.SymbolicRegressor":
+                    model_function_str = regressor.get_model_string(3)
+                    model_function_str  = model_function_str.replace('^','**')
+                elif  self.regressor_class == "pstree.cluster_gp_sklearn.PSTreeRegressor":
+                    model_function_str = str(regressor.model())
+                    for i in reversed(range(X.shape[1])):
+                        model_function_str = model_function_str.replace("X{}".format(i), "X{}".format(i+1))
+                elif self.regressor_class == "gplearn.genetic.SymbolicRegressor":
+                    model_function_str = sp.sympify(str(regressor._program), locals=self.regressor_args["function_set"])
+                else:
+                    replace_ops = {"add": "+", "mul": "*", "sub": "-", "pow": "**", "inv": "1/",
+                                    "abs": "Abs", "arctan": "atan"}
+                    model_function_str = regressor.retrieve_tree().infix()
+                    for op,replace_op in replace_ops.items():
+                        model_function_str = model_function_str.replace(op,replace_op)
+                    model_function_str = model_function_str.replace("x_", "X")
+                    for i in reversed(range(X.shape[1])):
+                        model_function_str = model_function_str.replace("X{}".format(i), "X{}".format(i+1))
+                if sp.parse_expr(model_function_str) != sp.nan:
+                    break
+                else:
+                    print("try again (detected nan expr): {}".format(model_function_str))
+                    self.regressor_args["random_state"]+=1000
             models.append(model_function_str)
         self.models[idx]=models
 
@@ -109,7 +122,6 @@ class MultiDimensionalRegressorWrapper(Ensemble):
                     model_with_name = model_with_name.replace("X{}".format(len(names)+1), "reward")
                 models_with_names[idx].append(model_with_name)
                 print(sp.parse_expr(model_with_name))
-        
 
     def update( 
         self,

@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
-
+import numpy as np
 from . import termination_fns
 
 
@@ -11,6 +11,15 @@ def cartpole(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
     assert len(next_obs.shape) == len(act.shape) == 2, "shapes: {}, {}".format(next_obs.shape, act.shape)
 
     return (~termination_fns.cartpole(act, next_obs)).float().view(-1, 1)
+
+def pendulum_gym(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
+    assert len(next_obs.shape) == len(act.shape) == 2
+    def angle_normalize(x):
+        return ((x + np.pi) % (2 * np.pi)) - np.pi
+    th = next_obs[:, :1]
+    thdot = next_obs[:, 1:2]
+    costs = angle_normalize(th) ** 2 + 0.1 * thdot**2 + 0.001 * (act**2)
+    return (-costs).view(-1, 1)
 
 
 def cartpole_pets(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:

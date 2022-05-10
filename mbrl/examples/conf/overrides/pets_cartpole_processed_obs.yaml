@@ -1,5 +1,6 @@
 #### @package _group_
 env: "cartpole_continuous"
+obs_process_fn: mbrl.env.cartpole_continuous.CartPoleEnv.preprocess_fn
 
 learned_rewards: false
 trial_length: 200

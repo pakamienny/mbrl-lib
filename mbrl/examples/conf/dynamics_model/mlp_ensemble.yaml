@@ -4,7 +4,7 @@ device: ${device}
 num_layers: 4
 in_size: ???
 out_size: ???
-ensemble_size: 1
+ensemble_size: 10
 hid_size: 200
 deterministic: true
 activation_fn:
