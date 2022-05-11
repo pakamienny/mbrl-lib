@@ -12,3 +12,8 @@ log_frequency_agent: 1000
 save_video: false
 debug_mode: false
 root_dir: "./exp"
+
+evaluate:
+  evaluate_all_model_updates: true
+  evaluate_model_accuracies: true
+  evaluate_number_episodes: 3

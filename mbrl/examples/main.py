@@ -19,7 +19,7 @@ def run(cfg: omegaconf.DictConfig):
     env, term_fn, reward_fn = mbrl.util.env.EnvHandler.make_env(cfg)
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
-    if cfg.algorithm.name == "pets":
+    if cfg.algorithm.name in ["pets", "random"]:
         return pets.train(env, term_fn, reward_fn, cfg)
     if cfg.algorithm.name == "mbpo":
         test_env, *_ = mbrl.util.env.EnvHandler.make_env(cfg)

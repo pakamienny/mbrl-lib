@@ -18,8 +18,27 @@ import mbrl.types
 import mbrl.util
 import mbrl.util.common
 import mbrl.util.math
+from mbrl.diagnostics.eval_model_on_dataset import DatasetEvaluator
+import pathlib
+import copy
 
 EVAL_LOG_FORMAT = mbrl.constants.EVAL_LOG_FORMAT
+
+def evaluate(
+    env: gym.Env,
+    agent: mbrl.planning.Agent,
+    number_episodes: int = 10,
+):
+    agent.reset()
+    rewards = mbrl.util.common.rollout_agent_trajectories(
+        env,
+        agent=agent,
+        agent_kwargs={},
+        steps_or_trials_to_collect=number_episodes,
+        collect_full_trajectories=True
+    )
+    assert len(rewards)==number_episodes, "problem with number of rewards"
+    return (np.mean(rewards), np.std(rewards)/np.sqrt(number_episodes))
 
 def create_trainer(cfg, dynamics_model, logger):
     model_trainer =  hydra.utils.instantiate(cfg.algorithm.model_trainer, 
@@ -37,7 +56,7 @@ def train(
 ) -> np.float32:
     # ------------------- Initialization -------------------
     debug_mode = cfg.get("debug_mode", False)
-
+    evaluation_env = copy.deepcopy(env)
     obs_shape = env.observation_space.shape
     act_shape = env.action_space.shape
 
@@ -88,9 +107,12 @@ def train(
         env, dynamics_model, termination_fn, reward_fn, generator=torch_generator
     )
 
-    agent = mbrl.planning.create_trajectory_optim_agent_for_model(
-        model_env, cfg.algorithm.agent, num_particles=cfg.algorithm.num_particles
-    )
+    if  cfg.algorithm.agent == "mbrl.planning.RandomAgent":
+        agent = mbrl.planning.RandomAgent(env)
+    else:
+        agent = mbrl.planning.create_trajectory_optim_agent_for_model(
+            model_env, cfg.algorithm.agent, num_particles=cfg.algorithm.num_particles
+        )
 
     # ---------------------------------------------------------
     # --------------------- Training Loop ---------------------
@@ -113,6 +135,30 @@ def train(
                     replay_buffer,
                     work_dir=work_dir,
                 )
+                print(dynamics_model.model)
+                to_log = {"env_step": cfg.algorithm.initial_exploration_steps+env_steps}
+
+                if cfg.evaluate.evaluate_model_accuracies:
+                    model_path = pathlib.Path(work_dir)
+
+                    results_path = model_path / "diagnostics" / "dataset"
+                    evaluator = DatasetEvaluator(model_path, model_path, results_path / "in_domain" / "epoch_{}".format(model_trainer._train_iteration))
+                    metrics = evaluator.run() 
+                    for k, v in metrics.items():
+                        to_log["in_domain_{}".format(k)]=v
+   
+                    datasets_paths = cfg.overrides.evaluate_dataset_path.split(",")
+                    for i, dataset_path in enumerate(datasets_paths):
+                        evaluator = DatasetEvaluator(model_path, dataset_path, results_path / "random" / "epoch_{}".format(model_trainer._train_iteration))
+                        metrics = evaluator.run() 
+                        for k, v in metrics.items():
+                            to_log["dataset{}_{}".format(i, k)]=v
+
+                if cfg.evaluate.evaluate_model_accuracies:
+                    evaluation_reward = evaluate(evaluation_env, copy.deepcopy(agent), number_episodes=cfg.evaluate.evaluate_number_episodes)
+                    to_log.update({"episode_reward": evaluation_reward[0], "episode_reward_ste": evaluation_reward[1]})
+
+                logger.log_data(mbrl.constants.RESULTS_LOG_NAME, to_log)
 
             # --- Doing env step using the agent and adding to model dataset ---
             next_obs, reward, done, _ = mbrl.util.common.step_env_and_add_to_buffer(
@@ -127,11 +173,6 @@ def train(
             if debug_mode:
                 print(f"Step {env_steps}: Reward {reward:.3f}.")
 
-        if logger is not None:
-            logger.log_data(
-                mbrl.constants.RESULTS_LOG_NAME,
-                {"env_step": env_steps, "episode_reward": total_reward},
-            )
         current_trial += 1
         print(f"Trial: {current_trial }, reward: {total_reward}.")
 

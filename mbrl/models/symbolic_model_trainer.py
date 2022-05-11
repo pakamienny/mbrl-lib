@@ -135,7 +135,7 @@ class SymbolicModelTrainer:
         eval_dataset = dataset_train if dataset_val is None else dataset_val
 
         training_losses, val_scores = [], []
-        best_weights = copy.deepcopy(self.model.model.get_compiled_models())
+        best_weights = copy.deepcopy(self.model.model.get_string_models())
         num_epochs = 1
         epoch_iter = range(num_epochs) if num_epochs else itertools.count()
         best_val_score = self.evaluate(eval_dataset) if evaluate else None
@@ -276,7 +276,7 @@ class SymbolicModelTrainer:
         """
         improvement = (best_val_score - val_score) / torch.abs(best_val_score)
         improved = improvement > 0
-        new_weights = copy.deepcopy(self.model.model.get_compiled_models())
+        new_weights = copy.deepcopy(self.model.model.get_string_models())
         for i in range(len(best_weights)):
             if improved[i] == True:
                 print("model {} from ensemble is better than before".format(i))
@@ -288,7 +288,7 @@ class SymbolicModelTrainer:
     ):
         #self.model.model.model.print_sympy_expr()
         if best_weights is not None:
-            self.model.model.set_compiled_models(best_weights)
+            self.model.model.set_string_models(best_weights)
      
         if len(best_val_score) > 1 and hasattr(self.model, "num_elites"):
             sorted_indices = np.argsort(best_val_score.tolist())

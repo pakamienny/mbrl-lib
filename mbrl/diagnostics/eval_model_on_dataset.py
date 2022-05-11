@@ -12,7 +12,7 @@ import numpy as np
 
 import mbrl.util
 import mbrl.util.common
-
+from sklearn.metrics import r2_score, mean_squared_error
 
 class DatasetEvaluator:
     def __init__(self, model_dir: str, dataset_dir: str, output_dir: str):
@@ -34,11 +34,25 @@ class DatasetEvaluator:
         )
 
         self.replay_buffer = mbrl.util.common.create_replay_buffer(
-            self.cfg,
+            mbrl.util.common.load_hydra_cfg(dataset_dir),
             self.env.observation_space.shape,
             self.env.action_space.shape,
             load_dir=dataset_dir,
         )
+
+    def compute_metrics(self, pred, target, metrics="r2,mse"):
+        assert pred.ndim==target.ndim==2
+        
+        out_size = pred.shape[1]
+        results = {}
+        for dim in range(out_size) :
+            if "r2" in metrics.split(","):
+                r2 = r2_score(target[:, dim], pred[:, dim])
+                results["r2_dim{}".format(dim)]=r2
+            if "mse" in metrics.split(","):
+                mse = mean_squared_error(target[:, dim], pred[:, dim])
+                results["mse_dim{}".format(dim)]=mse
+        return results
 
     def plot_dataset_results(self, dataset: mbrl.util.TransitionIterator):
         all_means: List[np.ndarray] = []
@@ -50,7 +64,6 @@ class DatasetEvaluator:
                 outputs,
                 target,
             ) = self.dynamics_model.get_output_and_targets(batch)
-
             all_means.append(outputs[0].cpu().numpy())
             all_targets.append(target.cpu().numpy())
 
@@ -61,6 +74,7 @@ class DatasetEvaluator:
         if all_means_np.ndim == 2:
             all_means_np = all_means_np[np.newaxis, :]
         assert all_means_np.ndim == 3  # ensemble, batch, target_dim
+        metrics = self.compute_metrics(all_means_np.mean(0), targets_np)
 
         # Visualization
         num_dim = targets_np.shape[1]
@@ -93,9 +107,10 @@ class DatasetEvaluator:
             fname = self.output_path / f"pred_dim{dim}.png"
             plt.savefig(fname)
             plt.close()
+        return metrics
 
     def run(self):
-        batch_size = 32
+        batch_size = -1
         if hasattr(self.dynamics_model, "set_propagation_method"):
             self.dynamics_model.set_propagation_method(None)
             # Some models (e.g., GaussianMLP) require the batch size to be
@@ -104,8 +119,7 @@ class DatasetEvaluator:
         dataset, _ = mbrl.util.common.get_basic_buffer_iterators(
             self.replay_buffer, batch_size=batch_size, val_ratio=0
         )
-
-        self.plot_dataset_results(dataset)
+        return self.plot_dataset_results(dataset)
 
 
 if __name__ == "__main__":

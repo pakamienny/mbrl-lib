@@ -5,6 +5,7 @@
 import pathlib
 from posixpath import dirname
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+import copy
 
 import hydra
 import omegaconf
@@ -24,7 +25,7 @@ from functools import partial
 
 def expr_to_numexpr_fn(expr):
     infix = str(expr)
-
+    
     def get_vals(dim, val):
         vals_ar = np.empty((dim,))
         vals_ar[:] = val
@@ -44,28 +45,24 @@ def expr_to_numexpr_fn(expr):
     return partial(wrapped_numexpr_fn, infix)
    
 def get_model_sympy_expr(model):
-    return sp.parse_expr(model.get_model_string(3).replace('^','**')) 
-
-def get_model_sympy_expr_from_numexpr(model):
-    return model.args[0]
+    model_str = model.get_model_string(3).replace('^','**')
+    return sp.parse_expr(model_str) 
 
 class StackedModels(nn.Module):
-    def __init__(self, ensemble_size, out_size, device):
+    def __init__(self, ensemble_size, out_size, deterministic, device):
         super().__init__()
 
         """For now, elite is defined for all dimensions of output"""
-
-        print("................ Building operon .....................")
-
-        self.models=[[create_operon_model(e) for o in range(out_size)] for e in range(ensemble_size)]
+        self.deterministic=deterministic
+        self.models=[[create_operon_model(e, deterministic) for o in range(out_size)] for e in range(ensemble_size)]
         self.num_members=ensemble_size
         self.out_size=out_size
         self.elite_models: List[int] = None
         self.use_only_elite = False
         self.fake_param = nn.Parameter(torch.tensor(0.))
         self.device=device
+        self.string_models = [[None for _ in range(self.out_size)] for _ in range(self.num_members)]
         self.compiled_models = [[None for _ in range(self.out_size)] for _ in range(self.num_members)]
-        print("................ Built operon .....................")
 
     def toggle_use_only_elite(self):
         self.use_only_elite = not self.use_only_elite
@@ -74,29 +71,33 @@ class StackedModels(nn.Module):
         if len(elite_indices) != self.num_members:
             self.elite_models = list(elite_indices)
    
-    def compile(self):
+    def compile_string(self):
         for model_id, model in enumerate(self.models):
             for dim in range(self.out_size):
                 try:
-                    expr = get_model_sympy_expr(model[dim])
+                    expr = get_model_sympy_expr(model[dim].regressor)
                 except Exception as e:
                     break
                 if expr != sp.nan:
-                    self.compiled_models[model_id][dim]=expr_to_numexpr_fn(expr)
+                    self.string_models[model_id][dim]=(expr, model[dim].regressor_variance)
                 else:
                     print("failed dim: {}".format(dim))
-        print("Compiled models")
+
+    def compile(self):
+        for model_id, model in enumerate(self.string_models):
+            for dim in range(self.out_size):
+                self.compiled_models[model_id][dim]=(expr_to_numexpr_fn(model[dim][0]), model[dim][1])
 
     def __str__(self):
-        for model_id, model in enumerate(self.compiled_models): 
+        for model_id, model in enumerate(self.string_models): 
             for dim in range(self.out_size):
-                print("model id: {}, dim {}, expr: {} ".format(model_id, dim, get_model_sympy_expr_from_numexpr(model[dim])))
+                print("model id: {}, dim {}, expr: {} ".format(model_id, dim, model[dim][0]))
 
     def __repr__(self):
         repr=""
-        for model_id, model in enumerate(self.compiled_models): 
+        for model_id, model in enumerate(self.string_models): 
             for dim in range(self.out_size):
-                repr+="model id: {}, dim {}, expr: {} \n".format(model_id, dim, get_model_sympy_expr_from_numexpr(model[dim]))
+                repr+="model id: {}, dim {}, expr: {} \n".format(model_id,  dim, model[dim][0])
         return repr
                 
     def fit(self, X, y, max_trials=10):
@@ -109,12 +110,13 @@ class StackedModels(nn.Module):
                 trial = 0
                 while trial<max_trials:
                     model[dim].fit(X_np[model_id], y_np[model_id, :, dim])
-                    expr = get_model_sympy_expr(model[dim])
+                    expr = get_model_sympy_expr(model[dim].regressor)
                     if expr == sp.nan:
                         trial+=1
-                        model[dim] = create_operon_model(model_id+1000)
+                        model[dim] = create_operon_model(model_id+1000, self.deterministic)
                     else:
                         break
+        self.compile_string()
         self.compile()
 
     def forward(self, x):
@@ -122,44 +124,96 @@ class StackedModels(nn.Module):
         if x_np.ndim == 3 and x_np.shape[0]:
             x_np = x_np[0]
 
-        outputs = []
+        means, logvars = [], []
         to_forward = self.elite_models if self.use_only_elite else [i for i in range(self.num_members)]
         compiled_models = [model for model_id, model in enumerate(self.compiled_models) if model_id in to_forward]
-    
+        models = [model for model_id, model in enumerate(self.models) if model_id in to_forward]
+
         if x_np.ndim == 3:
             for model_id, model in enumerate(compiled_models):
-                outputs_i = []
+                means_i, logvars_i = [], []
                 for j in range(self.out_size):
                     if model[j] == None:
-                        y_tilde = np.zeros((x_np.shape[1], 1))
+                        y_tilde, logvar = np.zeros((x_np.shape[1], 1)), np.ones((x_np.shape[1], 1))
                     else:
-                        y_tilde = model[j](x_np[model_id])
+                        y_tilde = model[j][0](x_np[model_id])
+                        logvar = models[model_id][j].forward_logvar(x_np[model_id])
                         if y_tilde.ndim==1:
                             y_tilde = np.expand_dims(y_tilde, -1)
-                    outputs_i.append(y_tilde)
-                outputs_i = np.concatenate(outputs_i, -1)
-                outputs.append(outputs_i[None, :])
-            outputs = np.concatenate(outputs, 0)
-            outputs = torch.tensor(outputs).to(self.device)
+                        if logvar.ndim==1:
+                            logvar = np.expand_dims(logvar, -1)
+                    means_i.append(y_tilde)
+                    logvars_i.append(logvar)
+                means_i = np.concatenate(means_i, -1)
+                means.append(means_i[None, :])
+                logvars_i = np.concatenate(logvars_i, -1)
+                logvars.append(logvars_i[None, :])
+            means = np.concatenate(means, 0)
+            logvars = np.concatenate(logvars, 0)
+            means = torch.tensor(means).to(self.device)
+            logvars = torch.tensor(logvars).to(self.device)
+
         else:
             for model_id, model in enumerate(compiled_models):
-                outputs_i = []
+                means_i, logvars_i = [], []
                 for j in range(self.out_size):
                     if model[j] == None:
-                        y_tilde = np.zeros((x_np.shape[0], 1))
+                        y_tilde, logvar = np.zeros((x_np.shape[0], 1)), np.ones((x_np.shape[0], 1))
                     else:
-                        y_tilde = model[j](x_np)
+                        y_tilde = model[j][0](x_np)
+                        logvar = models[model_id][j].forward_logvar(x_np)
                         if y_tilde.ndim==1:
                             y_tilde = np.expand_dims(y_tilde, -1)
-                    outputs_i.append(y_tilde)
-                outputs_i = np.concatenate(outputs_i, -1)
-                outputs.append(outputs_i[None, :])
-            outputs = np.concatenate(outputs, 0)
-            outputs = torch.tensor(outputs).to(self.device)
-
-        return outputs
+                        if logvar.ndim==1:
+                            logvar = np.expand_dims(logvar, -1)
+                    means_i.append(y_tilde)
+                    logvars_i.append(logvar)
+                means_i = np.concatenate(means_i, -1)
+                means.append(means_i[None, :])
+                logvars_i = np.concatenate(logvars_i, -1)
+                logvars.append(logvars_i[None, :])
+            means = np.concatenate(means, 0)
+            logvars = np.concatenate(logvars, 0)
+            means = torch.tensor(means).to(self.device)
+            logvars = torch.tensor(logvars).to(self.device)
+        return means, logvars
         
-def create_operon_model(random_state):
+class StackRegressorWithVariance():
+    def __init__(self, regressor, deterministic=False, max_logvar=0.5, min_logvar=-10):
+        self.regressor = regressor
+        self.max_logvar = max_logvar
+        self.min_logvar = min_logvar
+
+        if not deterministic:
+            self.regressor_variance = None
+        else:
+            from sklearn.gaussian_process import GaussianProcessRegressor
+            self.regressor_variance = GaussianProcessRegressor(normalize_y=True)
+   
+
+    def fit(self, X, y):
+        self.regressor.fit(X,y)
+        if self.regressor_variance is not None:
+            y_tilde = self.regressor.predict(X)
+            self.regressor_variance.fit(X,(y-y_tilde)**2)
+    
+    def forward_logvar(self, X):
+
+        def softplus(x, beta=1., threshold=20.):
+            out = copy.deepcopy(x)
+            mask=x*beta<=threshold
+            out[mask]=1/beta*np.log(1+np.exp(beta*x[mask]))
+            return out
+
+        if self.regressor_variance is None:
+            return np.ones(X.shape[0])
+        var = self.regressor_variance.predict(X)
+        logvar = np.log(np.abs(var)+1e-7)
+        logvar = self.max_logvar - softplus(self.max_logvar - logvar)
+        logvar = self.min_logvar + softplus(logvar - self.min_logvar)
+        return logvar
+
+def create_operon_model(random_state, deterministic=False):
     from operon.sklearn import SymbolicRegressor
     regr = SymbolicRegressor(
                 local_iterations=5,
@@ -169,11 +223,12 @@ def create_operon_model(random_state):
                 time_limit= 240,
                 max_evaluations= 500000,
                 population_size= 5000,
-                allowed_symbols= 'add,sub,mul,div,constant,variable,cos,sin,pow',     
+                allowed_symbols= 'add,sub,mul,div,constant,variable,cos,sin,pow,exp',     
                 objectives= ["r2"],
                 reinserter='keep-best'
             )
-    return regr
+    
+    return StackRegressorWithVariance(regr, deterministic)
 
 
 
@@ -247,15 +302,16 @@ class Operon(Ensemble):
         self.in_size = in_size
         self.out_size = out_size
         self.device = device
-        self.model = StackedModels(ensemble_size, out_size, device)
+        self.model = StackedModels(ensemble_size, out_size, deterministic, device)
         self.elite_models: List[int] = None
+        self.min_logvar = -10 
+        self.max_logvar = 0.5 
 
+    def get_string_models(self):
+        return self.model.string_models
 
-    def get_compiled_models(self):
-        return self.model.compiled_models
-
-    def set_compiled_models(self, compiled_models):
-        self.model.compiled_models=compiled_models
+    def set_string_models(self, string_models):
+        self.model.string_models=string_models
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
@@ -268,8 +324,7 @@ class Operon(Ensemble):
         self, x: torch.Tensor, only_elite: bool = False, **_kwargs
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self._maybe_toggle_layers_use_only_elite(only_elite)
-        mean = self.model(x)
-        logvar = None
+        mean, logvar = self.model(x)
         self._maybe_toggle_layers_use_only_elite(only_elite)
         return mean, logvar
 
@@ -426,7 +481,7 @@ class Operon(Ensemble):
             .mean((1, 2))  # average over batch and target dimension
             .sum()
         )  # sum over ensemble dimension
-        nll += 0.01 * (self.max_logvar.sum() - self.min_logvar.sum())
+        nll += 0.01 * (self.max_logvar - self.min_logvar)
         return nll
 
     def update(
@@ -540,13 +595,15 @@ class Operon(Ensemble):
     def save(self, save_dir: Union[str, pathlib.Path]):
         """Saves the model to the given directory."""
         model_dict = {
-            "state_dict": self.state_dict(),
+            "string_models": self.get_string_models(),
             "elite_models": self.elite_models,
+
         }
         torch.save(model_dict, pathlib.Path(save_dir) / self._MODEL_FNAME)
 
     def load(self, load_dir: Union[str, pathlib.Path]):
         """Loads the model from the given path."""
         model_dict = torch.load(pathlib.Path(load_dir) / self._MODEL_FNAME)
-        self.load_state_dict(model_dict["state_dict"])
         self.elite_models = model_dict["elite_models"]
+        self.set_string_models(model_dict["string_models"])
+        self.model.compile()

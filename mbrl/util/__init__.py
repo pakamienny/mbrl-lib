@@ -93,5 +93,14 @@ def create_handler_from_str(env_name: str):
         from mbrl.util.mujoco import MujocoEnvHandler
 
         return MujocoEnvHandler()
+    elif env_name in ["custom_env_with_fn",
+                      "cartpole_continuous",
+                      "pets_cartpole",
+                      "pets_halfcheetah",
+                      "pets_reacher",
+                      "pets_pusher",
+                      "pendulum_gym"]:
+        from mbrl.util.mujoco import CustomEnvHandler
+        return CustomEnvHandler()
     else:
         raise NotImplementedError

@@ -1,6 +1,7 @@
-env: "cartpole_continuous"
-learned_rewards: false
-trial_length: 200
+env: "custom_env_with_fn"
+learned_rewards: true
+
+trial_length: 50
 num_steps: 5000
 
 num_elites: 5
@@ -19,4 +20,4 @@ cem_population_size: 350
 cem_alpha: 0.1
 cem_clipped_normal: false
 
-evaluate_dataset_path: "/checkpoint/pakamienny/model-based/final/random/operon/cartpole_continuous/2022.05.04/044141"
+evaluate_dataset_path: "/checkpoint/pakamienny/model-based/exp/pets/operon_ensemble/custom_env_with_fn/2022.05.11/024913"

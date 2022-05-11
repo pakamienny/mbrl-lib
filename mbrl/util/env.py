@@ -60,8 +60,11 @@ def _legacy_make_env(
         term_fn, reward_fn = _get_term_and_reward_fn(cfg)
     else:
         import mbrl.env.mujoco_envs
-
-        if cfg.overrides.env == "cartpole_continuous":
+        if cfg.overrides.env == "custom_env_with_fn":
+            env = mbrl.env.custom_env_with_fn.CustomFunctionEnv()
+            term_fn = mbrl.env.termination_fns.no_termination
+            reward_fn = mbrl.env.custom_env_with_fn.reward_fn
+        elif cfg.overrides.env == "cartpole_continuous":
             env = mbrl.env.cartpole_continuous.CartPoleEnv()
             term_fn = mbrl.env.termination_fns.cartpole
             reward_fn = mbrl.env.reward_fns.cartpole
