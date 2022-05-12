@@ -38,7 +38,11 @@ def expr_to_numexpr_fn(expr):
         for d in range(x.shape[1]):
             if "X{}".format(d+1) in _infix:
                 local_dict["X{}".format(d+1)]=x[:,d]
-        vals = ne.evaluate(_infix, local_dict=local_dict)
+        try:
+            vals = ne.evaluate(_infix, local_dict=local_dict)
+        except Exception as e:
+            print(e)
+            print(_infix, local_dict.keys())
         if len(vals.shape)==0:
             vals = get_vals(x.shape[0], vals)
         return vals[:, None]
@@ -46,7 +50,7 @@ def expr_to_numexpr_fn(expr):
    
 def get_model_sympy_expr(model):
     model_str = model.get_model_string(3).replace('^','**')
-    return sp.parse_expr(model_str) 
+    return str(sp.parse_expr(model_str))
 
 class StackedModels(nn.Module):
     def __init__(self, ensemble_size, out_size, deterministic, device):
@@ -86,6 +90,7 @@ class StackedModels(nn.Module):
     def compile(self):
         for model_id, model in enumerate(self.string_models):
             for dim in range(self.out_size):
+                
                 self.compiled_models[model_id][dim]=(expr_to_numexpr_fn(model[dim][0]), model[dim][1])
 
     def __str__(self):
@@ -112,6 +117,7 @@ class StackedModels(nn.Module):
                     model[dim].fit(X_np[model_id], y_np[model_id, :, dim])
                     expr = get_model_sympy_expr(model[dim].regressor)
                     if expr == sp.nan:
+                        print("nan detected")
                         trial+=1
                         model[dim] = create_operon_model(model_id+1000, self.deterministic)
                     else:
@@ -184,7 +190,7 @@ class StackRegressorWithVariance():
         self.max_logvar = max_logvar
         self.min_logvar = min_logvar
 
-        if not deterministic:
+        if deterministic:
             self.regressor_variance = None
         else:
             from sklearn.gaussian_process import GaussianProcessRegressor
@@ -220,12 +226,12 @@ def create_operon_model(random_state, deterministic=False):
                 generations= 10000,
                 n_threads= 10,
                 random_state=random_state,
-                time_limit= 240,
-                max_evaluations= 500000,
-                population_size= 5000,
-                allowed_symbols= 'add,sub,mul,div,constant,variable,cos,sin,pow,exp',     
-                objectives= ["r2"],
-                reinserter='keep-best'
+                #time_limit= 240,
+                #max_evaluations= 500000,
+                population_size= 500,
+                allowed_symbols= 'add,sub,mul,div,constant,variable,sin,floor,exp,abs',     
+                #objectives= ["r2"],
+               # reinserter='keep-best'
             )
     
     return StackRegressorWithVariance(regr, deterministic)
@@ -589,21 +595,34 @@ class Operon(Ensemble):
         return torch.randperm(batch_size, device=self.device)
 
     def set_elite(self, elite_indices: Sequence[int]):
-        if len(elite_indices) != self.num_members:
-            self.elite_models = list(elite_indices)
+        #if len(elite_indices) != self.num_members:
+        self.elite_models = list(elite_indices)
 
-    def save(self, save_dir: Union[str, pathlib.Path]):
+    def save(self, save_dir: Union[str, pathlib.Path], file = None):
         """Saves the model to the given directory."""
         model_dict = {
             "string_models": self.get_string_models(),
             "elite_models": self.elite_models,
 
         }
-        torch.save(model_dict, pathlib.Path(save_dir) / self._MODEL_FNAME)
+        if file is None:
+            file =  self._MODEL_FNAME
+        else: 
+            splitted_file = self._MODEL_FNAME.split(".")
+            splitted_file[-2]=self._MODEL_FNAME.split(".")[-2]+file
+            file = ".".join(splitted_file)
 
-    def load(self, load_dir: Union[str, pathlib.Path]):
+        torch.save(model_dict, pathlib.Path(save_dir) / file)
+
+    def load(self, load_dir: Union[str, pathlib.Path], file=None):
         """Loads the model from the given path."""
-        model_dict = torch.load(pathlib.Path(load_dir) / self._MODEL_FNAME)
+        if file is None:
+            file =  self._MODEL_FNAME
+        else: 
+            splitted_file = self._MODEL_FNAME.split(".")
+            splitted_file[-2]=self._MODEL_FNAME.split(".")[-2]+file
+            file = ".".join(splitted_file)
+        model_dict = torch.load(pathlib.Path(load_dir) / file)
         self.elite_models = model_dict["elite_models"]
         self.set_string_models(model_dict["string_models"])
         self.model.compile()

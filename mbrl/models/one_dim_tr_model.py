@@ -311,15 +311,15 @@ class OneDTransitionRewardModel(Model):
         model_state.update(self.model.reset_1d(obs, rng=rng))
         return model_state
 
-    def save(self, save_dir: Union[str, pathlib.Path]):
-        self.model.save(save_dir)
+    def save(self, save_dir: Union[str, pathlib.Path], file=None):
+        self.model.save(save_dir, file)
         if self.input_normalizer:
-            self.input_normalizer.save(save_dir)
+            self.input_normalizer.save(save_dir, file)
 
-    def load(self, load_dir: Union[str, pathlib.Path]):
-        self.model.load(load_dir)
+    def load(self, load_dir: Union[str, pathlib.Path], file=None):
+        self.model.load(load_dir, file)
         if self.input_normalizer:
-            self.input_normalizer.load(load_dir)
+            self.input_normalizer.load(load_dir, file)
 
     def set_elite(self, elite_indices: Sequence[int]):
         self.model.set_elite(elite_indices)

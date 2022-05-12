@@ -1,7 +1,7 @@
 run:
-  dir: /checkpoint/pakamienny/model-based/${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
+  dir: ${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
 sweep:
-  dir: /checkpoint/pakamienny/model-based/${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
+  dir: ${root_dir}/${algorithm.name}/${dynamics_model.name}/${overrides.env}/${now:%Y.%m.%d}/${now:%H%M%S}
 job:
   env_set:
     OMP_NUM_THREADS: '1'

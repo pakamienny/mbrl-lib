@@ -11,9 +11,13 @@ device: "cuda:0"
 log_frequency_agent: 1000
 save_video: false
 debug_mode: false
-root_dir: "./exp"
+root_dir: "/checkpoint/pakamienny/model-based/"
 
 evaluate:
   evaluate_all_model_updates: true
   evaluate_model_accuracies: true
   evaluate_number_episodes: 3
+
+
+save_model_all_epochs: false
+save_replay_buffer_all_epochs: false

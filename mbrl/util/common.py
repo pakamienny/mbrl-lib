@@ -370,6 +370,7 @@ def train_model_and_save_model_and_data(
     replay_buffer: ReplayBuffer,
     work_dir: Optional[Union[str, pathlib.Path]] = None,
     callback: Optional[Callable] = None,
+    save_model_all_epochs: bool = False
 ):
     """Convenience function for training a model and saving results.
 
@@ -415,6 +416,9 @@ def train_model_and_save_model_and_data(
     if work_dir is not None:
         model.save(str(work_dir))
         replay_buffer.save(work_dir)
+
+    if save_model_all_epochs:
+        model.save(str(work_dir), file="_{}".format(model_trainer._train_iteration))
 
 
 def rollout_model_env(
@@ -602,7 +606,8 @@ def step_env_and_add_to_buffer(
         agent_obs = obs
     action = agent.act(agent_obs, **agent_kwargs)
     next_obs, reward, done, info = env.step(action)
-    replay_buffer.add(obs, action, next_obs, reward, done)
+    timestep = env._elapsed_steps
+    replay_buffer.add(obs, action, next_obs, reward, done, timestep)
     if callback:
         callback((obs, action, next_obs, reward, done))
     return next_obs, reward, done, info

@@ -20,6 +20,6 @@ model_trainer:
   weight_decay: ${overrides.model_wd}
 
 reinitialize_models: true 
-normalize: false
+normalize: true
 normalize_double_precision: true
 target_is_delta: false

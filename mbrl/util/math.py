@@ -158,17 +158,28 @@ class Normalizer:
             val = torch.from_numpy(val).to(self.device)
         return self.std * val + self.mean
 
-    def load(self, results_dir: Union[str, pathlib.Path]):
+    def load(self, results_dir: Union[str, pathlib.Path], file = None):
         """Loads saved statistics from the given path."""
-        with open(pathlib.Path(results_dir) / self._STATS_FNAME, "rb") as f:
+        if file is None:
+            file =  self._STATS_FNAME
+        else: 
+            file =  self._STATS_FNAME + file
+        with open(pathlib.Path(results_dir) / file, "rb") as f:
             stats = pickle.load(f)
             self.mean = torch.from_numpy(stats["mean"]).to(self.device)
             self.std = torch.from_numpy(stats["std"]).to(self.device)
 
-    def save(self, save_dir: Union[str, pathlib.Path]):
+    def save(self, save_dir: Union[str, pathlib.Path], file = None):
         """Saves stored statistics to the given path."""
         save_dir = pathlib.Path(save_dir)
-        with open(save_dir / self._STATS_FNAME, "wb") as f:
+        if file is None:
+            file =  self._STATS_FNAME
+        else: 
+            splitted_file = self._STATS_FNAME.split(".")
+            splitted_file[-2]=self._STATS_FNAME.split(".")[-2]+file
+            file = ".".join(splitted_file)
+
+        with open(save_dir / file, "wb") as f:
             pickle.dump(
                 {"mean": self.mean.cpu().numpy(), "std": self.std.cpu().numpy()}, f
             )

@@ -3,7 +3,7 @@ device: ${device}
 in_size: ???
 out_size: ???
 ensemble_size: 2
-deterministic: false
+deterministic: true
 propagation_method: random_model
 
 name : operon_ensemble

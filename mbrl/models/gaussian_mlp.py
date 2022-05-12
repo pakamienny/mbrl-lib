@@ -375,16 +375,30 @@ class GaussianMLP(Ensemble):
         if len(elite_indices) != self.num_members:
             self.elite_models = list(elite_indices)
 
-    def save(self, save_dir: Union[str, pathlib.Path]):
+    def save(self, save_dir: Union[str, pathlib.Path], file=None):
         """Saves the model to the given directory."""
         model_dict = {
             "state_dict": self.state_dict(),
             "elite_models": self.elite_models,
+            "model": self
         }
-        torch.save(model_dict, pathlib.Path(save_dir) / self._MODEL_FNAME)
+        if file is None:
+            file =  self._MODEL_FNAME
+        else: 
+            splitted_file = self._MODEL_FNAME.split(".")
+            splitted_file[-2]=self._MODEL_FNAME.split(".")[-2]+file
+            file = ".".join(splitted_file)
+        torch.save(model_dict, pathlib.Path(save_dir) / file)
 
-    def load(self, load_dir: Union[str, pathlib.Path]):
+    
+    def load(self, load_dir: Union[str, pathlib.Path], file=None):
         """Loads the model from the given path."""
-        model_dict = torch.load(pathlib.Path(load_dir) / self._MODEL_FNAME)
+        if file is None:
+            file =  self._MODEL_FNAME
+        else: 
+            splitted_file = self._MODEL_FNAME.split(".")
+            splitted_file[-2]=self._MODEL_FNAME.split(".")[-2]+file
+            file = ".".join(splitted_file)
+        model_dict = torch.load(pathlib.Path(load_dir) / file)
         self.load_state_dict(model_dict["state_dict"])
         self.elite_models = model_dict["elite_models"]

@@ -9,12 +9,11 @@ import torch
 
 def reward_fn(act, next_obs):    
     if isinstance(next_obs, np.ndarray):
-        return np.exp(next_obs/10)*np.cos(next_obs)
+        y = np.exp(np.abs(next_obs)/3)*np.cos(next_obs*2*np.pi)
     else:
-        return torch.exp(next_obs/10)*torch.cos(next_obs)
+        y = torch.exp(torch.abs(next_obs)/3)*torch.cos(next_obs*2*np.pi)
+    return y
     
-
-
 class CustomFunctionEnv(gym.Env):
 
     def __init__(self):

@@ -26,6 +26,7 @@ class TransitionBatch:
     next_obs: Optional[TensorType]
     rewards: Optional[TensorType]
     dones: Optional[TensorType]
+    timesteps: Optional[TensorType]
 
     def __len__(self):
         return self.obs.shape[0]
@@ -40,6 +41,7 @@ class TransitionBatch:
             self.next_obs[item],
             self.rewards[item],
             self.dones[item],
+            self.timesteps[item],
         )
 
     @staticmethod
@@ -61,6 +63,8 @@ class TransitionBatch:
             self.next_obs.reshape(self._get_new_shape(self.obs.shape, batch_size)),
             self.rewards.reshape(self._get_new_shape(self.rewards.shape, batch_size)),
             self.dones.reshape(self._get_new_shape(self.dones.shape, batch_size)),
+            self.timesteps.reshape(self._get_new_shape(self.timesteps.shape, batch_size)),
+
         )
 
 

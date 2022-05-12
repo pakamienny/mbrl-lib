@@ -294,3 +294,4 @@ class SymbolicModelTrainer:
             sorted_indices = np.argsort(best_val_score.tolist())
             elite_models = sorted_indices[: self.model.num_elites]
             self.model.set_elite(elite_models)
+            print("set elite to {}".format(elite_models))

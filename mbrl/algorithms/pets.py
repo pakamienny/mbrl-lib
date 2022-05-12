@@ -28,6 +28,7 @@ def evaluate(
     env: gym.Env,
     agent: mbrl.planning.Agent,
     number_episodes: int = 10,
+    replay_buffer = None
 ):
     agent.reset()
     rewards = mbrl.util.common.rollout_agent_trajectories(
@@ -35,10 +36,24 @@ def evaluate(
         agent=agent,
         agent_kwargs={},
         steps_or_trials_to_collect=number_episodes,
-        collect_full_trajectories=True
+        collect_full_trajectories=True,
+        replay_buffer=replay_buffer
     )
+
+
     assert len(rewards)==number_episodes, "problem with number of rewards"
-    return (np.mean(rewards), np.std(rewards)/np.sqrt(number_episodes))
+    return replay_buffer, (np.mean(rewards), np.std(rewards)/np.sqrt(number_episodes))
+
+def plot_states(replay_buffer, path):
+    pathlib.Path.mkdir(path, parents=True, exist_ok=True)
+    import seaborn as sns
+    states = replay_buffer.get("obs")
+    distplot = sns.displot(states, kind="kde")
+    fig = distplot.fig
+    fig.savefig(path / "out.png") 
+    
+
+
 
 def create_trainer(cfg, dynamics_model, logger):
     model_trainer =  hydra.utils.instantiate(cfg.algorithm.model_trainer, 
@@ -134,7 +149,9 @@ def train(
                     cfg.overrides,
                     replay_buffer,
                     work_dir=work_dir,
+                    save_model_all_epochs=cfg.save_model_all_epochs
                 )
+           
                 print(dynamics_model.model)
                 to_log = {"env_step": cfg.algorithm.initial_exploration_steps+env_steps}
 
@@ -155,8 +172,22 @@ def train(
                             to_log["dataset{}_{}".format(i, k)]=v
 
                 if cfg.evaluate.evaluate_model_accuracies:
-                    evaluation_reward = evaluate(evaluation_env, copy.deepcopy(agent), number_episodes=cfg.evaluate.evaluate_number_episodes)
+                    eval_replay_buffer = mbrl.util.common.create_replay_buffer(
+                                        cfg,
+                                        obs_shape,
+                                        act_shape,
+                                        rng=rng,
+                                        obs_type=dtype,
+                                        action_type=dtype,
+                                        reward_type=dtype,
+                    )
+                    eval_replay_buffer, evaluation_reward = evaluate(evaluation_env, copy.deepcopy(agent), number_episodes=cfg.evaluate.evaluate_number_episodes, replay_buffer=eval_replay_buffer)
                     to_log.update({"episode_reward": evaluation_reward[0], "episode_reward_ste": evaluation_reward[1]})
+                    pathlib.Path.mkdir(model_path / "replay_buffers", parents=True, exist_ok=True)
+                    if cfg.save_model_all_epochs:
+                        torch.save(eval_replay_buffer, model_path / "replay_buffers" / "eval_{}.pt".format(model_trainer._train_iteration))
+                    if cfg.save_replay_buffer_all_epochs:
+                        torch.save(replay_buffer, model_path / "replay_buffers" / "train_{}.pt".format(model_trainer._train_iteration))
 
                 logger.log_data(mbrl.constants.RESULTS_LOG_NAME, to_log)
 
