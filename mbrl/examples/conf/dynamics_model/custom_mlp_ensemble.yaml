@@ -6,14 +6,17 @@ ensemble_size: 2
 deterministic: true
 propagation_method: random_model
 base_regressor_cfg:
-  _target_: operon.sklearn.SymbolicRegressor
-  local_iterations: 5
-  generations: 10000
-  n_threads: 10
-  population_size: 500
-  allowed_symbols: 'add,sub,mul,div,constant,variable,sin,floor,exp,abs'   
+  _target_: sklearn.neural_network.MLPRegressor
+  hidden_layer_sizes: [500,500,500]
+  shuffle: True
+  learning_rate_init: 3e-4
+  max_iter: 250
+  activation: "relu"
+  learning_rate: "adaptive"
+  warm_start: true
+  verbose: true
 
-name : operon_ensemble
+name : custom_mlp_ensemble
 
 model_trainer: 
   _target_: mbrl.models.SymbolicModelTrainer

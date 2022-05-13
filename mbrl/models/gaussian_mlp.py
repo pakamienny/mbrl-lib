@@ -77,7 +77,7 @@ class GaussianMLP(Ensemble):
         deterministic: bool = False,
         propagation_method: Optional[str] = None,
         learn_logvar_bounds: bool = False,
-        activation_fn = nn.ReLU(),
+        activation_fn = "ReLU",
         **args
 
     ):
@@ -89,7 +89,10 @@ class GaussianMLP(Ensemble):
         self.out_size = out_size
 
         def create_activation():
-            return activation_fn
+            if activation_fn == "ReLU": return torch.nn.ReLU()
+            elif activation_fn == "SiLU": return torch.nn.SiLU()
+            elif activation_fn == "Tanh": return torch.nn.Tanh()
+            else: raise NotImplementedError
 
 
         def create_linear_layer(l_in, l_out):

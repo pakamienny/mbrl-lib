@@ -115,6 +115,7 @@ class OneDTransitionRewardModel(Model):
             model_in = self.input_normalizer.normalize(model_in).float().to(self.device)
         return model_in
 
+
     def _process_batch(
         self, batch: mbrl.types.TransitionBatch, _as_float: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -127,7 +128,8 @@ class OneDTransitionRewardModel(Model):
             target_obs = next_obs
         target_obs = model_util.to_tensor(target_obs).to(self.device)
 
-        model_in = self._get_model_input(obs, action)
+        model_in = self._get_model_input(obs, action) 
+
         if self.learned_rewards:
             reward = model_util.to_tensor(reward).to(self.device).unsqueeze(reward.ndim)
             target = torch.cat([target_obs, reward], dim=obs.ndim - 1)

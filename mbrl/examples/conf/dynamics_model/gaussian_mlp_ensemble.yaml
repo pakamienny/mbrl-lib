@@ -1,3 +1,6 @@
+name : gaussian_mlp_ensemble
+
+
 _target_: mbrl.models.GaussianMLP
 device: ${device}
 num_layers: 4
@@ -5,21 +8,17 @@ in_size: ???
 out_size: ???
 ensemble_size: 7
 hid_size: 200
-deterministic: false
+deterministic: true
 propagation_method: random_model
 learn_logvar_bounds: false  # so far this works better
-activation_fn_cfg:
-  _target_: torch.nn.SiLU
-
-name : gaussian_mlp_ensemble
-
+activation_fn: SiLU
 
 model_trainer: 
   _target_: mbrl.models.ModelTrainer
   optim_lr: ${overrides.model_lr}
   weight_decay: ${overrides.model_wd}
 
-reinitialize_models: true 
+reinitialize_models: false 
 normalize: true
 normalize_double_precision: true
 target_is_delta: false

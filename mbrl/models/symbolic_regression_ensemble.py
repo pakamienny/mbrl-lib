@@ -22,223 +22,10 @@ from .model import Ensemble
 from .util import EnsembleLinearLayer, truncated_normal_init
 import numexpr as ne
 from functools import partial
+import operon
+from .symbolic_regression_utils import *
 
-def expr_to_numexpr_fn(expr):
-    infix = str(expr)
-    
-    def get_vals(dim, val):
-        vals_ar = np.empty((dim,))
-        vals_ar[:] = val
-        return vals_ar
-
-    def wrapped_numexpr_fn(_infix, x):
-        if torch.is_tensor(x) and x.device != "cpu":
-            x=x.cpu()
-        local_dict = {}
-        for d in range(x.shape[1]):
-            if "X{}".format(d+1) in _infix:
-                local_dict["X{}".format(d+1)]=x[:,d]
-        try:
-            vals = ne.evaluate(_infix, local_dict=local_dict)
-        except Exception as e:
-            print(e)
-            print(_infix, local_dict.keys())
-        if len(vals.shape)==0:
-            vals = get_vals(x.shape[0], vals)
-        return vals[:, None]
-    return partial(wrapped_numexpr_fn, infix)
-   
-def get_model_sympy_expr(model):
-    model_str = model.get_model_string(3).replace('^','**')
-    return str(sp.parse_expr(model_str))
-
-class StackedModels(nn.Module):
-    def __init__(self, ensemble_size, out_size, deterministic, device):
-        super().__init__()
-
-        """For now, elite is defined for all dimensions of output"""
-        self.deterministic=deterministic
-        self.models=[[create_operon_model(e, deterministic) for o in range(out_size)] for e in range(ensemble_size)]
-        self.num_members=ensemble_size
-        self.out_size=out_size
-        self.elite_models: List[int] = None
-        self.use_only_elite = False
-        self.fake_param = nn.Parameter(torch.tensor(0.))
-        self.device=device
-        self.string_models = [[None for _ in range(self.out_size)] for _ in range(self.num_members)]
-        self.compiled_models = [[None for _ in range(self.out_size)] for _ in range(self.num_members)]
-
-    def toggle_use_only_elite(self):
-        self.use_only_elite = not self.use_only_elite
-
-    def set_elite(self, elite_indices: Sequence[int]):
-        if len(elite_indices) != self.num_members:
-            self.elite_models = list(elite_indices)
-   
-    def compile_string(self):
-        for model_id, model in enumerate(self.models):
-            for dim in range(self.out_size):
-                try:
-                    expr = get_model_sympy_expr(model[dim].regressor)
-                except Exception as e:
-                    break
-                if expr != sp.nan:
-                    self.string_models[model_id][dim]=(expr, model[dim].regressor_variance)
-                else:
-                    print("failed dim: {}".format(dim))
-
-    def compile(self):
-        for model_id, model in enumerate(self.string_models):
-            for dim in range(self.out_size):
-                
-                self.compiled_models[model_id][dim]=(expr_to_numexpr_fn(model[dim][0]), model[dim][1])
-
-    def __str__(self):
-        for model_id, model in enumerate(self.string_models): 
-            for dim in range(self.out_size):
-                print("model id: {}, dim {}, expr: {} ".format(model_id, dim, model[dim][0]))
-
-    def __repr__(self):
-        repr=""
-        for model_id, model in enumerate(self.string_models): 
-            for dim in range(self.out_size):
-                repr+="model id: {}, dim {}, expr: {} \n".format(model_id,  dim, model[dim][0])
-        return repr
-                
-    def fit(self, X, y, max_trials=10):
-        X_np = X.cpu().numpy()
-        y_np = y.cpu().numpy()
-
-        assert X_np.ndim==3 and y_np.shape[0]==self.num_members, "problem with shape when fitting {}".format(X_np.shape, y_np.shape)
-        for model_id, model in enumerate(self.models): 
-            for dim in range(self.out_size):
-                trial = 0
-                while trial<max_trials:
-                    model[dim].fit(X_np[model_id], y_np[model_id, :, dim])
-                    expr = get_model_sympy_expr(model[dim].regressor)
-                    if expr == sp.nan:
-                        print("nan detected")
-                        trial+=1
-                        model[dim] = create_operon_model(model_id+1000, self.deterministic)
-                    else:
-                        break
-        self.compile_string()
-        self.compile()
-
-    def forward(self, x):
-        x_np = x.cpu().numpy()
-        if x_np.ndim == 3 and x_np.shape[0]:
-            x_np = x_np[0]
-
-        means, logvars = [], []
-        to_forward = self.elite_models if self.use_only_elite else [i for i in range(self.num_members)]
-        compiled_models = [model for model_id, model in enumerate(self.compiled_models) if model_id in to_forward]
-        models = [model for model_id, model in enumerate(self.models) if model_id in to_forward]
-
-        if x_np.ndim == 3:
-            for model_id, model in enumerate(compiled_models):
-                means_i, logvars_i = [], []
-                for j in range(self.out_size):
-                    if model[j] == None:
-                        y_tilde, logvar = np.zeros((x_np.shape[1], 1)), np.ones((x_np.shape[1], 1))
-                    else:
-                        y_tilde = model[j][0](x_np[model_id])
-                        logvar = models[model_id][j].forward_logvar(x_np[model_id])
-                        if y_tilde.ndim==1:
-                            y_tilde = np.expand_dims(y_tilde, -1)
-                        if logvar.ndim==1:
-                            logvar = np.expand_dims(logvar, -1)
-                    means_i.append(y_tilde)
-                    logvars_i.append(logvar)
-                means_i = np.concatenate(means_i, -1)
-                means.append(means_i[None, :])
-                logvars_i = np.concatenate(logvars_i, -1)
-                logvars.append(logvars_i[None, :])
-            means = np.concatenate(means, 0)
-            logvars = np.concatenate(logvars, 0)
-            means = torch.tensor(means).to(self.device)
-            logvars = torch.tensor(logvars).to(self.device)
-
-        else:
-            for model_id, model in enumerate(compiled_models):
-                means_i, logvars_i = [], []
-                for j in range(self.out_size):
-                    if model[j] == None:
-                        y_tilde, logvar = np.zeros((x_np.shape[0], 1)), np.ones((x_np.shape[0], 1))
-                    else:
-                        y_tilde = model[j][0](x_np)
-                        logvar = models[model_id][j].forward_logvar(x_np)
-                        if y_tilde.ndim==1:
-                            y_tilde = np.expand_dims(y_tilde, -1)
-                        if logvar.ndim==1:
-                            logvar = np.expand_dims(logvar, -1)
-                    means_i.append(y_tilde)
-                    logvars_i.append(logvar)
-                means_i = np.concatenate(means_i, -1)
-                means.append(means_i[None, :])
-                logvars_i = np.concatenate(logvars_i, -1)
-                logvars.append(logvars_i[None, :])
-            means = np.concatenate(means, 0)
-            logvars = np.concatenate(logvars, 0)
-            means = torch.tensor(means).to(self.device)
-            logvars = torch.tensor(logvars).to(self.device)
-        return means, logvars
-        
-class StackRegressorWithVariance():
-    def __init__(self, regressor, deterministic=False, max_logvar=0.5, min_logvar=-10):
-        self.regressor = regressor
-        self.max_logvar = max_logvar
-        self.min_logvar = min_logvar
-
-        if deterministic:
-            self.regressor_variance = None
-        else:
-            from sklearn.gaussian_process import GaussianProcessRegressor
-            self.regressor_variance = GaussianProcessRegressor(normalize_y=True)
-   
-
-    def fit(self, X, y):
-        self.regressor.fit(X,y)
-        if self.regressor_variance is not None:
-            y_tilde = self.regressor.predict(X)
-            self.regressor_variance.fit(X,(y-y_tilde)**2)
-    
-    def forward_logvar(self, X):
-
-        def softplus(x, beta=1., threshold=20.):
-            out = copy.deepcopy(x)
-            mask=x*beta<=threshold
-            out[mask]=1/beta*np.log(1+np.exp(beta*x[mask]))
-            return out
-
-        if self.regressor_variance is None:
-            return np.ones(X.shape[0])
-        var = self.regressor_variance.predict(X)
-        logvar = np.log(np.abs(var)+1e-7)
-        logvar = self.max_logvar - softplus(self.max_logvar - logvar)
-        logvar = self.min_logvar + softplus(logvar - self.min_logvar)
-        return logvar
-
-def create_operon_model(random_state, deterministic=False):
-    from operon.sklearn import SymbolicRegressor
-    regr = SymbolicRegressor(
-                local_iterations=5,
-                generations= 10000,
-                n_threads= 10,
-                random_state=random_state,
-                #time_limit= 240,
-                #max_evaluations= 500000,
-                population_size= 500,
-                allowed_symbols= 'add,sub,mul,div,constant,variable,sin,floor,exp,abs',     
-                #objectives= ["r2"],
-               # reinserter='keep-best'
-            )
-    
-    return StackRegressorWithVariance(regr, deterministic)
-
-
-
-class Operon(Ensemble):
+class SymbolicRegressor(Ensemble):
     """Implements an ensemble of multi-layer perceptrons each modeling a Gaussian distribution.
 
     This model corresponds to a Probabilistic Ensemble in the Chua et al.,
@@ -290,6 +77,7 @@ class Operon(Ensemble):
 
     def __init__(
         self,
+        base_regressor_cfg: Union[Dict, omegaconf.DictConfig],
         in_size: int,
         out_size: int,
         device: Union[str, torch.device],
@@ -308,10 +96,16 @@ class Operon(Ensemble):
         self.in_size = in_size
         self.out_size = out_size
         self.device = device
-        self.model = StackedModels(ensemble_size, out_size, deterministic, device)
+        self.model = SymbolicRegressorMatrix(base_regressor_cfg, ensemble_size, out_size, deterministic, device)
         self.elite_models: List[int] = None
         self.min_logvar = -10 
         self.max_logvar = 0.5 
+
+    def export_str(self):
+        return self.model.export_str() 
+    
+    def import_str(self, states_dict):
+        return self.model.import_str(states_dict)
 
     def get_string_models(self):
         return self.model.string_models
@@ -601,9 +395,8 @@ class Operon(Ensemble):
     def save(self, save_dir: Union[str, pathlib.Path], file = None):
         """Saves the model to the given directory."""
         model_dict = {
-            "string_models": self.get_string_models(),
+            "models": self.export_str(),
             "elite_models": self.elite_models,
-
         }
         if file is None:
             file =  self._MODEL_FNAME
@@ -622,7 +415,7 @@ class Operon(Ensemble):
             splitted_file = self._MODEL_FNAME.split(".")
             splitted_file[-2]=self._MODEL_FNAME.split(".")[-2]+file
             file = ".".join(splitted_file)
+        
         model_dict = torch.load(pathlib.Path(load_dir) / file)
+        self.import_str(model_dict["models"])
         self.elite_models = model_dict["elite_models"]
-        self.set_string_models(model_dict["string_models"])
-        self.model.compile()

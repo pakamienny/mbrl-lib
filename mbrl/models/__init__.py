@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 from .basic_ensemble import BasicEnsemble
 from .gaussian_mlp import GaussianMLP
-from .symbolicregression import Operon
+from .symbolic_regression_ensemble import SymbolicRegressor
 from .model import Ensemble, Model
 from .model_env import ModelEnv
 from .model_trainer import ModelTrainer

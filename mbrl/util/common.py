@@ -105,6 +105,7 @@ def create_one_dim_tr_model(
         num_elites=cfg.overrides.get("num_elites", None),
     )
     if model_dir:
+        
         dynamics_model.load(model_dir)
 
     return dynamics_model
@@ -405,6 +406,10 @@ def train_model_and_save_model_and_data(
     )
     if hasattr(model, "update_normalizer"):
         model.update_normalizer(replay_buffer.get_all())
+
+    if hasattr(model, "update_output_normalizer"):
+        model.update_output_normalizer(replay_buffer.get_all())
+
     model_trainer.train(
         dataset_train,
         dataset_val=dataset_val,

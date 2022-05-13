@@ -25,7 +25,6 @@ class DatasetEvaluator:
 
         self.env, term_fn, reward_fn = self.handler.make_env(self.cfg)
         self.reward_fn = reward_fn
-
         self.dynamics_model = mbrl.util.common.create_one_dim_tr_model(
             self.cfg,
             self.env.observation_space.shape,
