@@ -7,7 +7,7 @@ from posixpath import dirname
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import copy
 import importlib
-
+import warnings
 import hydra
 import omegaconf
 import sklearn
@@ -32,6 +32,8 @@ def get_method_type(regressor):
         return "mlp"
     elif isinstance(regressor, getattr(importlib.import_module("operon.sklearn"), "SymbolicRegressor")):
         return "operon"
+    elif isinstance(regressor, getattr(importlib.import_module("sklearn.gaussian_process"), "GaussianProcessRegressor")):
+        return "GP"
     elif isinstance(regressor, getattr(importlib.import_module("sklearn.preprocessing"), "StandardScaler")):
         return "scaler"
     else:
@@ -55,16 +57,90 @@ def expr_to_numexpr_fn(expr):
         try:
             vals = ne.evaluate(_infix, local_dict=local_dict)
         except Exception as e:
+            print(_infix)
             assert False
         if len(vals.shape)==0:
             vals = get_vals(x.shape[0], vals)
         return vals[:, None]
     return partial(wrapped_numexpr_fn, infix)
+
 def get_model_sympy_expr(model):
     model_str = model.get_model_string(3).replace('^','**')
     return str(sp.parse_expr(model_str))
 
 
+class Regressor():
+    def __init__(self, regressor,  scale_x=False):
+        self.regressor = regressor
+        self.compiled_regressor = None
+        self.str_regressor = None
+        self.compiled_scale_x, self.str_scale_x = None, None
+        if scale_x:  self.scale_x=StandardScaler()
+        else: self.scale_x=None
+
+    def __str__(self):
+        if get_method_type(self.regressor) == "GP":
+            return "GP"
+        return self.str_regressor
+
+    def __repr__(self):
+        if get_method_type(self.regressor) == "GP":
+            return "GP"
+        return self.str_regressor
+
+    def fit(self, X, y):
+        if self.scale_x is not None:
+            scaled_X = self.scale_x.fit_transform(X)
+        else:
+            scaled_X = X
+        self.regressor.fit(scaled_X, y)
+
+        print("error: ", ((self.regressor.predict(scaled_X)- y)**2).max())
+
+    def forward(self, X):
+        if self.compiled_regressor is None:
+            return (None, None)
+
+        if self.compiled_scale_x is not None:
+            scaled_X = self.compiled_scale_x.transform(X)
+        else:
+            scaled_X = X
+
+        if get_method_type(self.regressor) == "GP": 
+            #with warnings.catch_warnings():
+            #    warnings.simplefilter("ignore")
+            y_tilde = self.compiled_regressor.predict(scaled_X)#, return_std=True)
+        else:
+            raise NotImplementedError
+        return (y_tilde, None)#np.log(1e-7+np.sqrt(std)))
+
+    def export_str(self):
+        state_dict = {}
+        for regr in ["regressor", "scale_x"]:
+            state_dict[regr] = getattr(self,  "str_"+regr)
+        return state_dict
+
+    def import_str(self, state_dict):
+        for regr in ["regressor", "scale_x"]:
+            if regr in state_dict:
+                setattr(self,  "str_"+regr, state_dict[regr])
+        self.compile()
+
+    def compile_str(self):
+        for regr in ["regressor", "scale_x"]:
+            regressor = getattr(self, regr)
+            if regressor is None: 
+                continue
+            setattr(self, "str_"+regr,  regressor)
+
+    def compile(self):
+        for regr in ["regressor", "scale_x"]:
+            regressor = getattr(self, regr)
+            str_regressor = getattr(self, "str_"+regr)
+            if regressor is None: 
+                continue
+            setattr(self, "compiled_"+regr,  str_regressor)
+            
 class StackRegressorWithVariance():
     def __init__(self, regressor, regressor_variance=None, scale_x=False, scale_y=False):
         self.regressor = regressor
@@ -81,11 +157,15 @@ class StackRegressorWithVariance():
     def __str__(self):
         if get_method_type(self.regressor) == "mlp":
             return "MLP"
+        if get_method_type(self.regressor) == "GP":
+            return "GP"
         return self.str_regressor
 
     def __repr__(self):
         if get_method_type(self.regressor) == "mlp":
             return "MLP"
+        if get_method_type(self.regressor) == "GP":
+            return "GP"
         return self.str_regressor
 
     def fit(self, X, y):
@@ -109,17 +189,17 @@ class StackRegressorWithVariance():
         if self.compiled_regressor is None:
             return None
 
-        if self.scale_x is not None:
+        if self.compiled_scale_x is not None:
             scaled_X = self.compiled_scale_x.transform(X)
         else:
             scaled_X = X
 
-        if get_method_type(self.regressor) == "mlp": 
+        if get_method_type(self.regressor) in ["mlp", "GP"]: 
             y_tilde = self.compiled_regressor.predict(scaled_X)
         else:
             y_tilde = self.compiled_regressor(scaled_X)
         
-        if self.scale_y is not None:
+        if self.compiled_scale_y is not None:
             unscaled_y = self.compiled_scale_y.inverse_transform(y_tilde)
         else:
             unscaled_y = y_tilde
@@ -140,7 +220,8 @@ class StackRegressorWithVariance():
 
     def import_str(self, state_dict):
         for regr in ["regressor", "regressor_variance", "scale_x", "scale_y"]:
-            setattr(self,  "str_"+regr, state_dict[regr])
+            if regr in state_dict:
+                setattr(self,  "str_"+regr, state_dict[regr])
         self.compile()
 
     def compile_str(self):
@@ -165,34 +246,46 @@ class StackRegressorWithVariance():
                 continue
             if get_method_type(regressor) == "operon":
                 try:
-                    setattr(self, "compiled_"+regr,  expr_to_numexpr_fn(str_regressor))
+                    setattr(self, "compiled_"+regr,  expr_to_numexpr_fn(str_regressor) if str_regressor is not None else None)
                 except TypeError as e:
                     setattr(self, "compiled_"+regr, None)
             else:
                 setattr(self, "compiled_"+regr,  str_regressor)
 
-def create_model_with_variance(base_regressor_cfg, random_state, deterministic=False):
+def create_model_with_variance(base_regressor_cfg, random_state, deterministic=False, scale_x=False, scale_y=False):
     regressor = hydra.utils.instantiate(base_regressor_cfg, random_state=random_state)
-    
     if deterministic:
         regressor_variance = None
     else:
         regressor_variance = GaussianProcessRegressor(normalize_y=True)
-    return StackRegressorWithVariance(regressor, regressor_variance, scale_x=True, scale_y=True)
+    return StackRegressorWithVariance(regressor, regressor_variance, scale_x=scale_x, scale_y=scale_y)
+
+def create_gp_model(base_regressor_cfg, random_state, deterministic=False, scale_x=False, scale_y=False):
+    regressor = hydra.utils.instantiate(base_regressor_cfg, random_state=random_state, normalize_y=scale_y)
+    return Regressor(regressor, scale_x=scale_x)
+
 
 class SymbolicRegressorMatrix(nn.Module):
-    def __init__(self, base_regressor_cfg, ensemble_size, out_size, deterministic, device):
+    def __init__(self, base_regressor_cfg, ensemble_size, out_size, deterministic, device, scale_x=False, scale_y=False, **args):
         super().__init__()
 
         """For now, elite is defined for all dimensions of output"""
         self.deterministic=deterministic
         self.base_regressor_cfg=base_regressor_cfg
-        self.models=[
-            [
-                create_model_with_variance(self.base_regressor_cfg, e, deterministic) for o in range(out_size)
-            ] 
-                for e in range(ensemble_size)
-            ]
+        if base_regressor_cfg._target_ == "sklearn.gaussian_process.GaussianProcessRegressor":
+            self.models=[
+                [
+                    create_gp_model(self.base_regressor_cfg, e, deterministic, scale_x, scale_y) for o in range(out_size)
+                ] 
+                    for e in range(ensemble_size)
+                ]
+        else:
+            self.models=[
+                [
+                    create_model_with_variance(self.base_regressor_cfg, e, deterministic, scale_x, scale_y) for o in range(out_size)
+                ] 
+                    for e in range(ensemble_size)
+                ]
         self.num_members=ensemble_size
         self.out_size=out_size
         self.elite_models: List[int] = None
@@ -246,7 +339,7 @@ class SymbolicRegressorMatrix(nn.Module):
                 trial = 0
                 while trial<max_trials:
                     model[dim].fit(X_np[model_id], y_np[model_id, :, dim])
-                    if get_method_type(model[dim].regressor) != "mlp":
+                    if get_method_type(model[dim].regressor) == "operon":
                         expr = get_model_sympy_expr(model[dim].regressor)
                         if expr == sp.nan:
                             print("nan detected")
@@ -258,7 +351,7 @@ class SymbolicRegressorMatrix(nn.Module):
                         break
         self.compile_str()
         self.compile()
-
+    
     def forward(self, x):
         x_np = x.cpu().numpy()
         if x_np.ndim == 3 and x_np.shape[0]:
@@ -268,7 +361,8 @@ class SymbolicRegressorMatrix(nn.Module):
         logvars = None if self.deterministic else []
         to_forward = self.elite_models if self.use_only_elite else [i for i in range(self.num_members)]
         models = [model for model_id, model in enumerate(self.models) if model_id in to_forward]
-
+        print("to forward", to_forward)
+        print("x dim", x_np.ndim)
         if x_np.ndim == 3:
             for model_id, model in enumerate(models):
                 means_i, logvars_i = [], []
@@ -283,6 +377,8 @@ class SymbolicRegressorMatrix(nn.Module):
                             y_tilde = np.expand_dims(y_tilde, -1)
                     means_i.append(y_tilde)
                     if not self.deterministic:
+                        if logvar is None:
+                            logvar = np.zeros((x_np.shape[1], 1))  
                         if logvar.ndim==1:
                             logvar = np.expand_dims(logvar, -1)
                         logvars_i.append(logvar)
@@ -311,6 +407,8 @@ class SymbolicRegressorMatrix(nn.Module):
                         y_tilde = np.expand_dims(y_tilde, -1)
                     means_i.append(y_tilde)
                     if not self.deterministic:
+                        if logvar is None:
+                            logvar = np.zeros((x_np.shape[0], 1))
                         if logvar.ndim==1:
                             logvar = np.expand_dims(logvar, -1)
                         logvars_i.append(logvar)

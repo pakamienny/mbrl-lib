@@ -78,6 +78,7 @@ class SymbolicModelTrainer:
         batch_callback: Optional[Callable] = None,
         evaluate: bool = True,
         silent: bool = False,
+        initalize_model = None
     ) -> Tuple[List[float], List[float]]:
         """Trains the model for some number of epochs.
 
@@ -135,10 +136,20 @@ class SymbolicModelTrainer:
         eval_dataset = dataset_train if dataset_val is None else dataset_val
 
         training_losses, val_scores = [], []
-        best_weights = copy.deepcopy(self.model.model.export_str())
+
+
+        if initalize_model is not None:
+            print("Reinitialize with existing model")
+            best_weights = copy.deepcopy(initalize_model)
+            self._maybe_set_best_weights_and_elite(best_weights, [])
+        else:
+            print("Start with: ", self.model.model.export_str())
+            best_weights = copy.deepcopy(self.model.model.export_str())
+
         num_epochs = 1
         epoch_iter = range(num_epochs) if num_epochs else itertools.count()
         best_val_score = self.evaluate(eval_dataset) if evaluate else None
+        print("Starting value", best_val_score)
         # only enable tqdm if training for a single epoch,
         # otherwise it produces too much output
         disable_tqdm = silent or (num_epochs is None or num_epochs > 1)
@@ -163,6 +174,7 @@ class SymbolicModelTrainer:
                 eval_score = self.evaluate(
                     eval_dataset, batch_callback=batch_callback_epoch
                 )
+                print("Epoch value: ", eval_score)
                 val_scores.append(eval_score.mean().item())
                 best_weights = self.maybe_get_best_weights(best_weights,
                     best_val_score, eval_score, improvement_threshold
@@ -205,7 +217,7 @@ class SymbolicModelTrainer:
         return training_losses, val_scores
 
     def evaluate(
-        self, dataset: TransitionIterator, batch_callback: Optional[Callable] = None
+        self, dataset: TransitionIterator, batch_callback: Optional[Callable] = None, metric = "mse"
     ) -> torch.Tensor:
         """Evaluates the model on the validation dataset.
 
@@ -239,6 +251,7 @@ class SymbolicModelTrainer:
             batch_scores = torch.cat(
                 batch_scores_list, dim=batch_scores_list[0].ndim - 2
             )
+
         except RuntimeError as e:
             print(
                 f"There was an error calling ModelTrainer.evaluate(). "
@@ -248,9 +261,10 @@ class SymbolicModelTrainer:
         if isinstance(dataset, BootstrapIterator):
             dataset.toggle_bootstrap()
 
-        mean_axis = 1 if batch_scores.ndim == 2 else (1, 2)
-        batch_scores = batch_scores.mean(dim=mean_axis)
-
+        if batch_scores.ndim == 3:
+            batch_scores = batch_scores.mean(dim=1)
+        else:
+            batch_scores = batch_scores.mean(dim=0)
         return batch_scores
 
     def maybe_get_best_weights(
@@ -277,20 +291,24 @@ class SymbolicModelTrainer:
         improvement = (best_val_score - val_score) / torch.abs(best_val_score)
         improved = improvement > 0
         new_weights = copy.deepcopy(self.model.model.export_str())
-        for i in range(len(best_weights)):
-            if improved[i] == True:
-                print("model {} from ensemble is better than before".format(i))
-                best_weights[i]=new_weights[i]
+        for i, best_weight in enumerate(best_weights):
+            for j in range(len(best_weight)):
+                if improved[i][j] == True:
+                    print("model {} from ensemble is better than before".format(i))
+                    best_weights[i][j]=new_weights[i][j]
         return best_weights
 
     def _maybe_set_best_weights_and_elite(
         self, best_weights, best_val_score: torch.Tensor
     ):
+        print(best_val_score)
         #self.model.model.model.print_sympy_expr()
         if best_weights is not None:
-            self.model.model.set_string_models(best_weights)
+            print("best weights import: ", best_weights)
+            self.model.model.import_str(best_weights)
      
         if len(best_val_score) > 1 and hasattr(self.model, "num_elites"):
+            best_val_score = best_val_score.mean(-1)
             sorted_indices = np.argsort(best_val_score.tolist())
             elite_models = sorted_indices[: self.model.num_elites]
             self.model.set_elite(elite_models)

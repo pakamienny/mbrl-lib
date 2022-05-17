@@ -78,6 +78,7 @@ class ModelTrainer:
         batch_callback: Optional[Callable] = None,
         evaluate: bool = True,
         silent: bool = False,
+        **args
     ) -> Tuple[List[float], List[float]]:
         """Trains the model for some number of epochs.
 

@@ -371,7 +371,8 @@ def train_model_and_save_model_and_data(
     replay_buffer: ReplayBuffer,
     work_dir: Optional[Union[str, pathlib.Path]] = None,
     callback: Optional[Callable] = None,
-    save_model_all_epochs: bool = False
+    save_model_all_epochs: bool = False,
+    initalize_model= None,
 ):
     """Convenience function for training a model and saving results.
 
@@ -417,6 +418,7 @@ def train_model_and_save_model_and_data(
         patience=cfg.get("patience", 1),
         improvement_threshold=cfg.get("improvement_threshold", 0.01),
         callback=callback,
+        initalize_model=initalize_model
     )
     if work_dir is not None:
         model.save(str(work_dir))

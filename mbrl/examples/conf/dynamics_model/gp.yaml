@@ -2,22 +2,18 @@ _target_: mbrl.models.SymbolicRegressor
 device: ${device}
 in_size: ???
 out_size: ???
-ensemble_size: 3
+ensemble_size: 5
 deterministic: true
 propagation_method: random_model
 
+
 scale_x: false
-scale_y: false
+scale_y: true
 
 base_regressor_cfg:
-  _target_: operon.sklearn.SymbolicRegressor
-  local_iterations: 5
-  generations: 10000
-  n_threads: 10
-  population_size: 5000
-  allowed_symbols: 'add,sub,mul,div,constant,variable,sin,exp,abs'   
+  _target_: sklearn.gaussian_process.GaussianProcessRegressor
 
-name : operon_ensemble
+name : gp_ensemble
 
 model_trainer: 
   _target_: mbrl.models.SymbolicModelTrainer

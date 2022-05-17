@@ -5,6 +5,10 @@ out_size: ???
 ensemble_size: 2
 deterministic: true
 propagation_method: random_model
+
+
+scale_x: false
+scale_y: true
 base_regressor_cfg:
   _target_: sklearn.neural_network.MLPRegressor
   hidden_layer_sizes: [500,500,500]

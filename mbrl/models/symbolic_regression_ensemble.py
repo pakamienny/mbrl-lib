@@ -96,7 +96,7 @@ class SymbolicRegressor(Ensemble):
         self.in_size = in_size
         self.out_size = out_size
         self.device = device
-        self.model = SymbolicRegressorMatrix(base_regressor_cfg, ensemble_size, out_size, deterministic, device)
+        self.model = SymbolicRegressorMatrix(base_regressor_cfg, ensemble_size, out_size, deterministic, device, **args)
         self.elite_models: List[int] = None
         self.min_logvar = -10 
         self.max_logvar = 0.5 
@@ -171,7 +171,9 @@ class SymbolicRegressor(Ensemble):
             raise ValueError(
                 f"GaussianMLP ensemble requires batch size to be a multiple of the "
                 f"number of models. Current batch size is {x.shape[0]} for "
-                f"{model_len} models."
+                f"{model_len} models. "
+                f" x shape is {x.shape}, elite: {self.elite_models}, propagation_indices: {propagation_indices}"
+
             )
         x = x.unsqueeze(0)
         if self.propagation_method == "random_model":
@@ -349,7 +351,7 @@ class SymbolicRegressor(Ensemble):
             return self._nll_loss(model_in, target), {}
 
     def eval_score(  # type: ignore
-        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None
+        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, metric="mse"
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Computes the squared error for the model over the given input/target.
 
@@ -372,7 +374,17 @@ class SymbolicRegressor(Ensemble):
         with torch.no_grad():
             pred_mean, _ = self.forward(model_in, use_propagation=False)
             target = target.repeat((self.num_members, 1, 1))
-            return F.mse_loss(pred_mean, target, reduction="none"), {}
+            if metric == "mse":
+                return F.mse_loss(pred_mean, target, reduction="none"), {}
+            elif metric == "_r2":
+                num_samples = target.shape[1]
+                sum_of_errors = ((pred_mean-target)**2).sum(1, keepdim=True)
+                target_mean= target.mean(1, keepdim=True).repeat(1,num_samples,1)
+                denominator = ((target_mean-target)**2).sum(1, keepdim=True)
+                r2 = 1-sum_of_errors/denominator
+                return -r2, {}
+            else:
+                raise NotImplementedError
 
     def sample_propagation_indices(
         self, batch_size: int, _rng: torch.Generator
@@ -389,7 +401,8 @@ class SymbolicRegressor(Ensemble):
         return torch.randperm(batch_size, device=self.device)
 
     def set_elite(self, elite_indices: Sequence[int]):
-        #if len(elite_indices) != self.num_members:
+        if len(elite_indices) != self.num_members:
+            raise ValueError("problem with elite indices")
         self.elite_models = list(elite_indices)
 
     def save(self, save_dir: Union[str, pathlib.Path], file = None):

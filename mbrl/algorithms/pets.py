@@ -80,6 +80,18 @@ def train(
     if cfg.seed is not None:
         torch_generator.manual_seed(cfg.seed)
 
+
+
+    initalize_model = [[
+                        {"regressor": "X1+X2", "regressor_variance": None, "scale_x": None, "scale_y": None},
+                        {"regressor": "exp(abs(X1+X2)/3)*cos(2*3.14159265359*(X1+X2))", "regressor_variance": None, "scale_x": None, "scale_y": None}
+                    ],
+                    [
+                        {"regressor": "X1+X2", "regressor_variance": None, "scale_x": None, "scale_y": None},
+                        {"regressor": "exp(abs(X1+X2)/3)*cos(2*3.14159265359*(X1+X2))", "regressor_variance": None, "scale_x": None, "scale_y": None}
+                    ]
+                    ]
+    initalize_model = None
     work_dir = work_dir or os.getcwd()
     print(f"Results will be saved at {work_dir}.")
 
@@ -149,10 +161,10 @@ def train(
                     cfg.overrides,
                     replay_buffer,
                     work_dir=work_dir,
-                    save_model_all_epochs=cfg.save_model_all_epochs
+                    save_model_all_epochs=cfg.save_model_all_epochs,
+                    initalize_model=initalize_model if env_steps == 0 else None
                 )
            
-                print(dynamics_model.model)
                 to_log = {"env_step": cfg.algorithm.initial_exploration_steps+env_steps}
 
                 if cfg.evaluate.evaluate_model_accuracies:
