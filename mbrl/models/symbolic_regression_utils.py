@@ -109,10 +109,10 @@ class Regressor():
         if get_method_type(self.regressor) == "GP": 
             #with warnings.catch_warnings():
             #    warnings.simplefilter("ignore")
-            y_tilde = self.compiled_regressor.predict(scaled_X)#, return_std=True)
+            y_tilde, y_tilde_std = self.compiled_regressor.predict(scaled_X, return_std=True)
         else:
             raise NotImplementedError
-        return (y_tilde, None)#np.log(1e-7+np.sqrt(std)))
+        return (y_tilde, np.log(1e-7+np.sqrt(y_tilde_std)))
 
     def export_str(self):
         state_dict = {}
@@ -159,14 +159,14 @@ class StackRegressorWithVariance():
             return "MLP"
         if get_method_type(self.regressor) == "GP":
             return "GP"
-        return self.str_regressor
+        return self.str_regressor if self.str_regressor is not None else "NaN"
 
     def __repr__(self):
         if get_method_type(self.regressor) == "mlp":
             return "MLP"
         if get_method_type(self.regressor) == "GP":
             return "GP"
-        return self.str_regressor
+        return self.str_regressor if self.str_regressor is not None else "NaN"
 
     def fit(self, X, y):
         if self.scale_x is not None:
@@ -286,7 +286,6 @@ class SymbolicRegressorMatrix(nn.Module):
                 ] 
                     for e in range(ensemble_size)
                 ]
-        self.num_members=ensemble_size
         self.out_size=out_size
         self.elite_models: List[int] = None
         self.use_only_elite = False
@@ -297,8 +296,7 @@ class SymbolicRegressorMatrix(nn.Module):
         self.use_only_elite = not self.use_only_elite
 
     def set_elite(self, elite_indices: Sequence[int]):
-        if len(elite_indices) != self.num_members:
-            self.elite_models = list(elite_indices)
+        self.elite_models = list(elite_indices)
 
     def compile(self):
         for model in self.models:
@@ -333,7 +331,7 @@ class SymbolicRegressorMatrix(nn.Module):
     def fit(self, X, y, max_trials=10):
         X_np = X.cpu().numpy()
         y_np = y.cpu().numpy()
-        assert X_np.ndim==3 and y_np.shape[0]==self.num_members, "problem with shape when fitting {}, {}".format(X_np.shape, y_np.shape)
+        #assert X_np.ndim==3 and y_np.shape[0]==self.num_members, "problem with shape when fitting {}, {}".format(X_np.shape, y_np.shape)
         for model_id, model in enumerate(self.models): 
             for dim in range(self.out_size):
                 trial = 0
@@ -359,10 +357,8 @@ class SymbolicRegressorMatrix(nn.Module):
 
         means = []
         logvars = None if self.deterministic else []
-        to_forward = self.elite_models if self.use_only_elite else [i for i in range(self.num_members)]
+        to_forward = self.elite_models if self.use_only_elite else [i for i in range(len(self.models))]
         models = [model for model_id, model in enumerate(self.models) if model_id in to_forward]
-        print("to forward", to_forward)
-        print("x dim", x_np.ndim)
         if x_np.ndim == 3:
             for model_id, model in enumerate(models):
                 means_i, logvars_i = [], []

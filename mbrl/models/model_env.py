@@ -186,6 +186,5 @@ class ModelEnv:
                 rewards[terminated] = 0
                 terminated |= dones
                 total_rewards += rewards
-
             total_rewards = total_rewards.reshape(-1, num_particles)
             return total_rewards.mean(dim=1)

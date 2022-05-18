@@ -119,7 +119,7 @@ class SymbolicRegressor(Ensemble):
         if self.num_members > 1 and only_elite:
             self.model.set_elite(self.elite_models)
             self.model.toggle_use_only_elite()
-
+    
     def _default_forward(
         self, x: torch.Tensor, only_elite: bool = False, **_kwargs
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -422,6 +422,8 @@ class SymbolicRegressor(Ensemble):
 
     def load(self, load_dir: Union[str, pathlib.Path], file=None):
         """Loads the model from the given path."""
+
+        print("Loading model")
         if file is None:
             file =  self._MODEL_FNAME
         else: 
@@ -432,3 +434,5 @@ class SymbolicRegressor(Ensemble):
         model_dict = torch.load(pathlib.Path(load_dir) / file)
         self.import_str(model_dict["models"])
         self.elite_models = model_dict["elite_models"]
+        self.model.set_elite(self.elite_models)
+

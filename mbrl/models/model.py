@@ -455,8 +455,6 @@ class Ensemble(Model, abc.ABC):
                 be returned with value ``None``.
         """
         if deterministic or self.deterministic:
-            print("model input", model_input.shape)
-
             return (
                 self.forward(
                     model_input,

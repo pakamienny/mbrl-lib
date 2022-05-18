@@ -18,31 +18,12 @@ import mbrl.types
 import mbrl.util
 import mbrl.util.common
 import mbrl.util.math
-from mbrl.diagnostics.eval_model_on_dataset import DatasetEvaluator
+from mbrl.diagnostics.eval_model_on_dataset import DatasetEvaluator, RewardEvaluator
 import pathlib
 import copy
 
 EVAL_LOG_FORMAT = mbrl.constants.EVAL_LOG_FORMAT
 
-def evaluate(
-    env: gym.Env,
-    agent: mbrl.planning.Agent,
-    number_episodes: int = 10,
-    replay_buffer = None
-):
-    agent.reset()
-    rewards = mbrl.util.common.rollout_agent_trajectories(
-        env,
-        agent=agent,
-        agent_kwargs={},
-        steps_or_trials_to_collect=number_episodes,
-        collect_full_trajectories=True,
-        replay_buffer=replay_buffer
-    )
-
-
-    assert len(rewards)==number_episodes, "problem with number of rewards"
-    return replay_buffer, (np.mean(rewards), np.std(rewards)/np.sqrt(number_episodes))
 
 def plot_states(replay_buffer, path):
     pathlib.Path.mkdir(path, parents=True, exist_ok=True)
@@ -51,9 +32,6 @@ def plot_states(replay_buffer, path):
     distplot = sns.displot(states, kind="kde")
     fig = distplot.fig
     fig.savefig(path / "out.png") 
-    
-
-
 
 def create_trainer(cfg, dynamics_model, logger):
     model_trainer =  hydra.utils.instantiate(cfg.algorithm.model_trainer, 
@@ -193,7 +171,8 @@ def train(
                                         action_type=dtype,
                                         reward_type=dtype,
                     )
-                    eval_replay_buffer, evaluation_reward = evaluate(evaluation_env, copy.deepcopy(agent), number_episodes=cfg.evaluate.evaluate_number_episodes, replay_buffer=eval_replay_buffer)
+                    evaluator = RewardEvaluator(model_path)
+                    eval_replay_buffer, evaluation_reward = evaluator.run(cfg.evaluate.evaluate_number_episodes)
                     to_log.update({"episode_reward": evaluation_reward[0], "episode_reward_ste": evaluation_reward[1]})
                     pathlib.Path.mkdir(model_path / "replay_buffers", parents=True, exist_ok=True)
                     if cfg.save_model_all_epochs:

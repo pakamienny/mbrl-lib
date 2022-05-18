@@ -10,13 +10,14 @@ model_wd: 3e-5
 model_batch_size: -1
 validation_ratio: -1
 freq_train_model: 50
-patience: 25
-num_epochs_train_model: 1000
+patience: 100 #25
+num_epochs_train_model: 10000
+
 
 planning_horizon: 3
-cem_num_iters: 50 #5
+cem_num_iters:  10 #5
 cem_elite_ratio: 0.1
-cem_population_size: 10000 #350
+cem_population_size: 1000 # 350 #10000
 cem_alpha: 0.1
 cem_clipped_normal: true #false
 

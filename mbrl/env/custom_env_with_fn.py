@@ -43,7 +43,7 @@ class CustomFunctionEnv(gym.Env):
         action = action.squeeze()
         x = self.state
         self.state = x+action
-        reward = reward_fn(action, self.state)
+        reward = reward_fn(action, self.state)[0]
         self._elapsed_steps += 1
         return np.array(self.state), reward, False, {}
 

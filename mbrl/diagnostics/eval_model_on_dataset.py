@@ -13,6 +13,51 @@ import numpy as np
 import mbrl.util
 import mbrl.util.common
 from sklearn.metrics import r2_score, mean_squared_error
+import torch
+
+class RewardEvaluator:
+    def __init__(self, model_dir: str):
+        self.model_dir = pathlib.Path(model_dir)
+        pathlib.Path.mkdir(self.model_dir, parents=True, exist_ok=True)
+
+        self.cfg = mbrl.util.common.load_hydra_cfg(self.model_dir)
+        self.handler = mbrl.util.create_handler(self.cfg)
+        torch_generator = torch.Generator(device=self.cfg.device)
+
+        self.env, self.term_fn, self.reward_fn = self.handler.make_env(self.cfg)
+        self.dynamics_model = mbrl.util.common.create_one_dim_tr_model(
+            self.cfg,
+            self.env.observation_space.shape,
+            self.env.action_space.shape,
+            model_dir=self.model_dir,
+        )
+
+        model_env = mbrl.models.ModelEnv(
+            self.env, self.dynamics_model,  self.term_fn, self.reward_fn, generator=torch_generator
+        )
+        if  self.cfg.algorithm.agent == "mbrl.planning.RandomAgent":
+            self.agent = mbrl.planning.RandomAgent(self.env)
+        else:
+            self.agent = mbrl.planning.create_trajectory_optim_agent_for_model(
+                model_env, self.cfg.algorithm.agent, num_particles=self.cfg.algorithm.num_particles
+            )
+
+    def run(self, num_episodes):
+
+        replay_buffer = mbrl.util.common.create_replay_buffer(
+            mbrl.util.common.load_hydra_cfg(self.model_dir),
+            self.env.observation_space.shape,
+            self.env.action_space.shape,
+        )
+        rewards = mbrl.util.common.rollout_agent_trajectories(
+            self.env,
+            agent=self.agent,
+            agent_kwargs={},
+            steps_or_trials_to_collect=num_episodes,
+            collect_full_trajectories=True,
+            replay_buffer=replay_buffer
+        )
+        return replay_buffer,  (np.mean(rewards), np.std(rewards)/np.sqrt(num_episodes))
 
 class DatasetEvaluator:
     def __init__(self, model_dir: str, dataset_dir: str, output_dir: str):

@@ -383,7 +383,7 @@ class GaussianMLP(Ensemble):
         model_dict = {
             "state_dict": self.state_dict(),
             "elite_models": self.elite_models,
-            "model": self
+            "models": self
         }
         if file is None:
             file =  self._MODEL_FNAME

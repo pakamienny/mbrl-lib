@@ -266,7 +266,7 @@ class ModelTrainer:
         self,
         best_val_score: torch.Tensor,
         val_score: torch.Tensor,
-        threshold: float = 0.01,
+        threshold: float = 0.0001,
     ) -> Optional[Dict]:
         """Return the current model state dict  if the validation score improves.
 

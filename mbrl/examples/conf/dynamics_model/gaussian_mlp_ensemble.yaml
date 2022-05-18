@@ -1,6 +1,5 @@
 name : gaussian_mlp_ensemble
 
-
 _target_: mbrl.models.GaussianMLP
 device: ${device}
 num_layers: 4
