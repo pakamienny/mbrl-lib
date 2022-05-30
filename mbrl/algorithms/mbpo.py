@@ -21,6 +21,8 @@ import mbrl.util.common
 import mbrl.util.math
 from mbrl.planning.sac_wrapper import SACAgent
 from mbrl.third_party.pytorch_sac import VideoRecorder
+from mbrl.diagnostics.eval_model_on_dataset import DatasetEvaluator, RewardEvaluator
+import pathlib
 
 MBPO_LOG_FORMAT = mbrl.constants.EVAL_LOG_FORMAT + [
     ("epoch", "E", "int"),
@@ -103,6 +105,11 @@ def maybe_replace_sac_buffer(
         return new_buffer
     return sac_buffer
 
+def create_trainer(cfg, dynamics_model, logger):
+    model_trainer =  hydra.utils.instantiate(cfg.algorithm.model_trainer, 
+                                             model=dynamics_model,
+                                             logger=logger)
+    return model_trainer
 
 def train(
     env: gym.Env,
@@ -117,10 +124,20 @@ def train(
 
     obs_shape = env.observation_space.shape
     act_shape = env.action_space.shape
+    initalize_model = [[
+                        {"regressor": "X1+X2", "regressor_variance": None, "scale_x": None, "scale_y": None},
+                        {"regressor": "exp(abs(X1+X2)/3)*cos(2*3.14159265359*(X1+X2))", "regressor_variance": None, "scale_x": None, "scale_y": None}
+                    ],
+                    [
+                        {"regressor": "X1+X2", "regressor_variance": None, "scale_x": None, "scale_y": None},
+                        {"regressor": "exp(abs(X1+X2)/3)*cos(2*3.14159265359*(X1+X2))", "regressor_variance": None, "scale_x": None, "scale_y": None}
+                    ]
+                    ]
+    initalize_model = None
 
     mbrl.planning.complete_agent_cfg(env, cfg.algorithm.agent)
     agent = SACAgent(
-        cast(pytorch_sac_pranz24.SAC, hydra.utils.instantiate(cfg.algorithm.agent))
+        cast(pytorch_sac_pranz24.SAC, hydra.utils.instantiate(cfg.algorithm.agent, _recursive_=False))
     )
 
     work_dir = work_dir or os.getcwd()
@@ -142,6 +159,8 @@ def train(
 
     # -------------- Create initial overrides. dataset --------------
     dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape)
+    model_trainer = create_trainer(cfg, dynamics_model, logger)
+
     use_double_dtype = cfg.algorithm.get("normalize_double_precision", False)
     dtype = np.double if use_double_dtype else np.float32
     replay_buffer = mbrl.util.common.create_replay_buffer(
@@ -175,12 +194,7 @@ def train(
     model_env = mbrl.models.ModelEnv(
         env, dynamics_model, termination_fn, None, generator=torch_generator
     )
-    model_trainer = mbrl.models.ModelTrainer(
-        dynamics_model,
-        optim_lr=cfg.overrides.model_lr,
-        weight_decay=cfg.overrides.model_wd,
-        logger=None if silent else logger,
-    )
+
     best_eval_reward = -np.inf
     epoch = 0
     sac_buffer = None
@@ -212,7 +226,29 @@ def train(
                     cfg.overrides,
                     replay_buffer,
                     work_dir=work_dir,
+                    save_model_all_epochs=cfg.save_model_all_epochs,
+                    initalize_model=initalize_model if env_steps == 0 else None
                 )
+                model_path = pathlib.Path(work_dir)
+
+                if cfg.evaluate.evaluate_model_accuracies:
+                    eval_replay_buffer = mbrl.util.common.create_replay_buffer(
+                                        cfg,
+                                        obs_shape,
+                                        act_shape,
+                                        rng=rng,
+                                        obs_type=dtype,
+                                        action_type=dtype,
+                                        reward_type=dtype,
+                    )
+                    evaluator = RewardEvaluator(model_path)
+                    eval_replay_buffer, evaluation_reward = evaluator.run(cfg.evaluate.evaluate_number_episodes)
+                    pathlib.Path.mkdir(model_path / "replay_buffers", parents=True, exist_ok=True)
+                    if cfg.save_model_all_epochs:
+                        torch.save(eval_replay_buffer, model_path / "replay_buffers" / "eval_{}.pt".format(model_trainer._train_iteration))
+                    if cfg.save_replay_buffer_all_epochs:
+                        torch.save(replay_buffer, model_path / "replay_buffers" / "train_{}.pt".format(model_trainer._train_iteration))
+
 
                 # --------- Rollout new model and store imagined trajectories --------
                 # Batch all rollouts for the next freq_train_model steps together

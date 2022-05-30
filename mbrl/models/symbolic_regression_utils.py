@@ -57,8 +57,7 @@ def expr_to_numexpr_fn(expr):
         try:
             vals = ne.evaluate(_infix, local_dict=local_dict)
         except Exception as e:
-            print(_infix)
-            assert False
+            return None
         if len(vals.shape)==0:
             vals = get_vals(x.shape[0], vals)
         return vals[:, None]

@@ -401,8 +401,8 @@ class SymbolicRegressor(Ensemble):
         return torch.randperm(batch_size, device=self.device)
 
     def set_elite(self, elite_indices: Sequence[int]):
-        if len(elite_indices) != self.num_members:
-            raise ValueError("problem with elite indices")
+        #if len(elite_indices) != self.num_members:
+        #    raise ValueError("problem with elite indices")
         self.elite_models = list(elite_indices)
 
     def save(self, save_dir: Union[str, pathlib.Path], file = None):

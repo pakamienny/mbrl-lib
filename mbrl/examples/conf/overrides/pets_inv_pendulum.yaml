@@ -20,3 +20,5 @@ cem_elite_ratio: 0.078
 cem_population_size: 480
 cem_alpha: 0.134484
 cem_clipped_normal: false
+
+evaluate_dataset_path: "/checkpoint/pakamienny/model-based/random/operon_ensemble/gym___InvertedPendulum-v2/2022.05.19/003839"

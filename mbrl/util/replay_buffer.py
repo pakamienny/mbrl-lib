@@ -561,7 +561,7 @@ class ReplayBuffer:
         next_obs: np.ndarray,
         reward: np.ndarray,
         done: np.ndarray,
-        timestep: np.ndarray,
+        timestep: Optional[np.ndarray] = None,
     ):
         """Adds a transition (s, a, s', r, done) to the replay buffer.
 
@@ -586,7 +586,8 @@ class ReplayBuffer:
             np.copyto(self.reward[buffer_slice], reward[batch_slice])
             np.copyto(self.next_obs[buffer_slice], next_obs[batch_slice])
             np.copyto(self.done[buffer_slice], done[batch_slice])
-            np.copyto(self.timestep[buffer_slice], timestep[batch_slice])
+            if timestep is not None:
+                np.copyto(self.timestep[buffer_slice], timestep[batch_slice])
 
         _batch_start = 0
         buffer_end = self.cur_idx + len(obs)

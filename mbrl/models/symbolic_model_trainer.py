@@ -311,5 +311,5 @@ class SymbolicModelTrainer:
             best_val_score = best_val_score.mean(-1)
             sorted_indices = np.argsort(best_val_score.tolist())
             elite_models = sorted_indices[: self.model.num_elites]
-            self.model.set_elite(elite_models)
             print("set elite to {}".format(elite_models))
+            self.model.set_elite(elite_models)  

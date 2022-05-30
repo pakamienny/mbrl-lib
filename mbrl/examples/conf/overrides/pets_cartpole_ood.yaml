@@ -1,4 +1,11 @@
 env: "cartpole_continuous"
+env_cfg:
+  _target_: mbrl.env.cartpole_continuous.CartPoleEnv
+  x_constraints: False
+  theta_constraints: False
+  x_starting: 2.5
+term_fn: no_termination
+ 
 learned_rewards: false
 trial_length: 200
 num_steps: 5000

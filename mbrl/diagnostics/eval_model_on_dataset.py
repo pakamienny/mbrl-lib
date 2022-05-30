@@ -14,6 +14,7 @@ import mbrl.util
 import mbrl.util.common
 from sklearn.metrics import r2_score, mean_squared_error
 import torch
+import hydra
 
 class RewardEvaluator:
     def __init__(self, model_dir: str):
@@ -35,8 +36,19 @@ class RewardEvaluator:
         model_env = mbrl.models.ModelEnv(
             self.env, self.dynamics_model,  self.term_fn, self.reward_fn, generator=torch_generator
         )
+         
         if  self.cfg.algorithm.agent == "mbrl.planning.RandomAgent":
             self.agent = mbrl.planning.RandomAgent(self.env)
+        elif self.cfg.algorithm.agent._target_ == "mbrl.third_party.pytorch_sac_pranz24.sac.SAC":
+            from mbrl.planning.sac_wrapper import SACAgent
+            import mbrl.third_party.pytorch_sac_pranz24 as pytorch_sac_pranz24
+            from typing import Optional, Sequence, cast
+            mbrl.planning.complete_agent_cfg(self.env, self.cfg.algorithm.agent)
+
+            self.agent = SACAgent(
+                cast(pytorch_sac_pranz24.SAC, hydra.utils.instantiate(self.cfg.algorithm.agent, _recursive_=False))
+            )
+
         else:
             self.agent = mbrl.planning.create_trajectory_optim_agent_for_model(
                 model_env, self.cfg.algorithm.agent, num_particles=self.cfg.algorithm.num_particles
@@ -98,7 +110,7 @@ class DatasetEvaluator:
                 results["mse_dim{}".format(dim)]=mse
         return results
 
-    def plot_dataset_results(self, dataset: mbrl.util.TransitionIterator):
+    def plot_dataset_results(self, dataset: mbrl.util.TransitionIterator, compute_stats: bool = True):
         all_means: List[np.ndarray] = []
         all_targets = []
 
@@ -118,8 +130,16 @@ class DatasetEvaluator:
         if all_means_np.ndim == 2:
             all_means_np = all_means_np[np.newaxis, :]
         assert all_means_np.ndim == 3  # ensemble, batch, target_dim
-        metrics = self.compute_metrics(all_means_np.mean(0), targets_np)
 
+        
+        metrics = {}
+        if compute_stats:
+            ensemble_size = all_means_np.shape[0]
+            for ensemble in range(ensemble_size):
+                metrics_ensemble=self.compute_metrics(all_means_np[ensemble], targets_np)
+                for k,v in metrics_ensemble.items():
+                    metrics[k+"_ens{}".format(ensemble)]=v
+       
         # Visualization
         num_dim = targets_np.shape[1]
         for dim in range(num_dim):
@@ -153,7 +173,7 @@ class DatasetEvaluator:
             plt.close()
         return metrics
 
-    def run(self):
+    def run(self, compute_stats=True):
         batch_size = -1
         if hasattr(self.dynamics_model, "set_propagation_method"):
             self.dynamics_model.set_propagation_method(None)
@@ -163,7 +183,7 @@ class DatasetEvaluator:
         dataset, _ = mbrl.util.common.get_basic_buffer_iterators(
             self.replay_buffer, batch_size=batch_size, val_ratio=0
         )
-        return self.plot_dataset_results(dataset)
+        return self.plot_dataset_results(dataset, compute_stats)
 
 
 if __name__ == "__main__":
@@ -180,4 +200,4 @@ if __name__ == "__main__":
     mpl.rcParams["figure.facecolor"] = "white"
     mpl.rcParams["font.size"] = 14
 
-    evaluator.run()
+    evaluator.run(compute_stats=False)

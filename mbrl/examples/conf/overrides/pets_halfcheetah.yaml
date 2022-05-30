@@ -22,3 +22,6 @@ cem_elite_ratio: 0.16
 cem_population_size: 400
 cem_alpha: 0.12
 cem_clipped_normal: false
+
+
+evaluate_dataset_path: "/checkpoint/pakamienny/model-based/random/operon_ensemble/pets_halfcheetah/2022.05.19/010801"

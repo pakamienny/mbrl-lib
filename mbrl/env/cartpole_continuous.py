@@ -12,7 +12,7 @@ class CartPoleEnv(gym.Env):
     # a multiplicative factor to the total force.
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 50}
 
-    def __init__(self):
+    def __init__(self, x_constraints=True, theta_constraints=True, x_starting=0.5):
         self.gravity = 9.8
         self.masscart = 1.0
         self.masspole = 0.1
@@ -22,6 +22,9 @@ class CartPoleEnv(gym.Env):
         self.force_mag = 10.0
         self.tau = 0.02  # seconds between state updates
         self.kinematics_integrator = "euler"
+        self.x_constraints = x_constraints
+        self.theta_constraints = theta_constraints
+        self.x_starting = x_starting
 
         # Angle at which to fail the episode
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
@@ -83,12 +86,20 @@ class CartPoleEnv(gym.Env):
 
         self.state = (x, x_dot, theta, theta_dot)
 
-        done = bool(
+        done = False
+        x_constraint_broken = bool(
             x < -self.x_threshold
             or x > self.x_threshold
-            or theta < -self.theta_threshold_radians
+            )
+        theta_constraint_broken = bool(
+            theta < -self.theta_threshold_radians
             or theta > self.theta_threshold_radians
         )
+        if self.x_constraints:
+            done = done or x_constraint_broken
+        if self.theta_constraints:
+            done = done or theta_constraint_broken
+            
 
         if not done:
             reward = 1.0

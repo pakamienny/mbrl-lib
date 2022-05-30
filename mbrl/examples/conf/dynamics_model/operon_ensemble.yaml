@@ -15,7 +15,7 @@ base_regressor_cfg:
   generations: 10000
   n_threads: 10
   population_size: 5000
-  allowed_symbols: 'add,sub,mul,div,constant,variable,sin,exp,abs'   
+  allowed_symbols: 'add,sub,mul,div,constant,variable,sin,cos,pow'   
 
 name : operon_ensemble
 

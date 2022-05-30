@@ -144,9 +144,9 @@ def train(
                 )
            
                 to_log = {"env_step": cfg.algorithm.initial_exploration_steps+env_steps}
+                model_path = pathlib.Path(work_dir)
 
                 if cfg.evaluate.evaluate_model_accuracies:
-                    model_path = pathlib.Path(work_dir)
 
                     results_path = model_path / "diagnostics" / "dataset"
                     evaluator = DatasetEvaluator(model_path, model_path, results_path / "in_domain" / "epoch_{}".format(model_trainer._train_iteration))
